@@ -11,13 +11,14 @@ Automated submission bot for EU government electronic registration portals.
 
 ## Features
 
+- 🖥️ **Modern Desktop UI** (Electron)
 - 🔐 Digital certificate authentication
 - 📝 Automatic form filling
 - 📎 Document attachment upload
 - 📅 Scheduled execution
 - 📄 Receipt download
 - 🔄 Retry logic with error handling
-- 📊 Detailed logging
+- 📊 Detailed logging & monitoring
 
 ## Installation
 
@@ -119,6 +120,33 @@ attachments:
     required: true
 ```
 
+## Desktop Application (Recommended)
+
+The easiest way to use EU Registry Bot is through the Desktop Application.
+
+### Desktop App Installation
+
+```bash
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Node.js dependencies
+cd desktop
+npm install
+
+# Run the desktop app
+npm start
+```
+
+### Desktop App Features
+
+- **Dashboard**: Overview of status, statistics, and recent activity
+- **Submit**: Easy-to-use form for submitting applications
+- **Applications**: Manage and view pending application files
+- **Results**: View all submission results and details
+- **Scheduler**: Configure automatic daily submissions
+- **Settings**: Configure default certificate and browser options
+
 ## Project Structure
 
 ```
@@ -132,11 +160,19 @@ eu-registry-bot/
 │   │   └── france/
 │   ├── models/         # Data models
 │   └── utils/          # Utilities
+├── api/                 # Flask API server (for Desktop App)
+│   └── server.py
+├── desktop/             # Electron Desktop Application
+│   ├── src/
+│   │   ├── main.js     # Electron main process
+│   │   ├── preload.js  # Preload script
+│   │   └── renderer/   # UI files (HTML/CSS/JS)
+│   └── package.json
 ├── data/
 │   ├── input/          # Application files
 │   └── output/         # Results and receipts
 ├── logs/               # Log files
-├── main.py             # Entry point
+├── main.py             # CLI entry point
 └── requirements.txt
 ```
 
