@@ -1,0 +1,52 @@
+========================================
+  EU Registry Bot - Guía de Instalación
+========================================
+
+REQUISITOS:
+-----------
+1. Windows 10 o superior
+2. Python 3.10+ (https://www.python.org/downloads/)
+   ⚠️ IMPORTANTE: Marca "Add Python to PATH" durante la instalación
+3. Node.js 18+ (https://nodejs.org/)
+
+
+INSTALACIÓN:
+------------
+1. Extrae este archivo ZIP en una carpeta
+2. Haz doble clic en: INSTALL_WINDOWS.bat
+3. Espera a que termine la instalación
+4. El instalador (.exe) estará en: desktop\build\
+
+
+EJECUTAR LA APLICACIÓN:
+-----------------------
+Opción A: Instalar el .exe generado en desktop\build\
+Opción B: Ejecutar RUN_APP.bat (modo desarrollo)
+
+
+CONFIGURACIÓN:
+--------------
+1. Coloca tu certificado digital (.p12 o .pfx) en la carpeta: certificates\
+2. Abre la aplicación
+3. En "Submit", selecciona tu certificado e introduce la contraseña
+4. Selecciona el archivo de solicitud (.yaml)
+5. Haz clic en "Submit Application"
+
+
+ESTRUCTURA DE CARPETAS:
+-----------------------
+eu-registry-bot/
+├── certificates/     ← Coloca tu certificado aquí
+├── data/
+│   ├── input/       ← Archivos de solicitud (.yaml)
+│   └── output/      ← Resultados y recibos
+├── desktop/
+│   └── build/       ← Instalador .exe (después de compilar)
+└── logs/            ← Archivos de registro
+
+
+SOPORTE:
+--------
+Si tienes problemas, contacta al desarrollador.
+
+========================================
