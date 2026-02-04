@@ -1,0 +1,114 @@
+# Portugal Portal Configuration
+
+portal:
+  name: "Portugal - gov.pt"
+  base_url: "https://www.gov.pt"
+  auth_url: "https://www.autenticacao.gov.pt"
+  language: "pt"
+
+authentication:
+  # Authentication methods supported
+  methods:
+    - certificate  # Digital certificate (.p12/.pfx)
+    - cartao_cidadao  # Citizen Card (requires card reader)
+    - chave_movel  # Mobile Digital Key (manual intervention)
+
+  # Recommended for automation
+  preferred_method: "certificate"
+
+  # Certificate settings
+  certificate:
+    type: "p12"  # or "pfx"
+    # Path configured in .env
+
+endpoints:
+  login: "/autenticacao"
+  services: "/servicos"
+  submission: "/submissao"
+
+forms:
+  # Public road installation permit
+  instalacao_via_publica:
+    name: "Solicitud instalación en vía pública"
+    category: "Empresas"
+
+    fields:
+      - name: "nif"
+        type: "text"
+        required: true
+        description: "Tax Identification Number"
+
+      - name: "nome_requerente"
+        type: "text"
+        required: true
+        description: "Applicant name"
+
+      - name: "morada"
+        type: "text"
+        required: true
+        description: "Address"
+
+      - name: "codigo_postal"
+        type: "text"
+        required: true
+        description: "Postal code"
+
+      - name: "localidade"
+        type: "text"
+        required: true
+        description: "City"
+
+      - name: "email"
+        type: "email"
+        required: true
+        description: "Email address"
+
+      - name: "telefone"
+        type: "text"
+        required: false
+        description: "Phone number"
+
+      - name: "descricao_instalacao"
+        type: "textarea"
+        required: true
+        description: "Installation description"
+
+      - name: "local_instalacao"
+        type: "text"
+        required: true
+        description: "Installation location"
+
+      - name: "data_inicio"
+        type: "date"
+        required: true
+        description: "Start date"
+
+      - name: "data_fim"
+        type: "date"
+        required: false
+        description: "End date"
+
+    attachments:
+      - name: "documento_identificacao"
+        required: true
+        formats: ["pdf", "jpg", "png"]
+        max_size_mb: 5
+
+      - name: "plano_instalacao"
+        required: true
+        formats: ["pdf"]
+        max_size_mb: 10
+
+      - name: "outros_documentos"
+        required: false
+        formats: ["pdf", "jpg", "png"]
+        max_size_mb: 10
+
+selectors:
+  # CSS/XPath selectors for automation
+  login_button: "#login-btn"
+  certificate_option: "#auth-certificate"
+  submit_button: "#submit-form"
+  success_message: ".success-notification"
+  error_message: ".error-notification"
+  receipt_download: "#download-receipt"

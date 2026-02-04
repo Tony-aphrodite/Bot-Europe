@@ -1,0 +1,35 @@
+# EU Registry Bot - Global Settings
+
+app:
+  name: "EU Registry Bot"
+  version: "1.0.0"
+  description: "Automated submission bot for EU government portals"
+
+browser:
+  headless: true
+  timeout: 30
+  implicit_wait: 10
+  page_load_timeout: 60
+  download_dir: "./data/output"
+
+scheduler:
+  enabled: true
+  timezone: "Europe/Madrid"
+  default_hour: 9
+  default_minute: 0
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "./logs/bot.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+retry:
+  max_attempts: 3
+  delay_seconds: 5
+  backoff_multiplier: 2
+
+supported_countries:
+  - portugal
+  - france

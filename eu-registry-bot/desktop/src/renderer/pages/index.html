@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*">
+    <title>EU Registry Bot</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🇪🇺</span>
+                    <span class="logo-text">EU Registry Bot</span>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-page="submit">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-text">Submit</span>
+                </a>
+                <a href="#" class="nav-item" data-page="applications">
+                    <span class="nav-icon">📁</span>
+                    <span class="nav-text">Applications</span>
+                </a>
+                <a href="#" class="nav-item" data-page="results">
+                    <span class="nav-icon">✅</span>
+                    <span class="nav-text">Results</span>
+                </a>
+                <a href="#" class="nav-item" data-page="scheduler">
+                    <span class="nav-icon">⏰</span>
+                    <span class="nav-text">Scheduler</span>
+                </a>
+                <a href="#" class="nav-item" data-page="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">Settings</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-indicator" id="api-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <section class="page active" id="page-dashboard">
+                <header class="page-header">
+                    <h1>Dashboard</h1>
+                    <p>Overview of your EU Registry Bot</p>
+                </header>
+
+                <div class="dashboard-grid">
+                    <!-- Status Card -->
+                    <div class="card status-card">
+                        <div class="card-header">
+                            <h3>Current Status</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="status-display" id="bot-status">
+                                <span class="status-badge idle">Idle</span>
+                            </div>
+                            <div class="current-task" id="current-task" style="display: none;">
+                                <span class="task-text"></span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Quick Actions</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="quick-actions">
+                                <button class="btn btn-primary" onclick="navigateTo('submit')">
+                                    <span>📝</span> New Submission
+                                </button>
+                                <button class="btn btn-secondary" onclick="loadApplications()">
+                                    <span>🔄</span> Refresh
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Statistics Card -->
+                    <div class="card stats-card">
+                        <div class="card-header">
+                            <h3>Statistics</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-value" id="stat-pending">0</span>
+                                    <span class="stat-label">Pending</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value" id="stat-submitted">0</span>
+                                    <span class="stat-label">Submitted</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value" id="stat-failed">0</span>
+                                    <span class="stat-label">Failed</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity Card -->
+                    <div class="card logs-card">
+                        <div class="card-header">
+                            <h3>Recent Activity</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="logs-container" id="recent-logs">
+                                <p class="empty-state">No recent activity</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Submit Page -->
+            <section class="page" id="page-submit">
+                <header class="page-header">
+                    <h1>Submit Application</h1>
+                    <p>Submit a new application to EU government portals</p>
+                </header>
+
+                <div class="form-container">
+                    <form id="submit-form" class="submission-form">
+                        <!-- Certificate Section -->
+                        <div class="form-section">
+                            <h3>Certificate</h3>
+                            <div class="form-group">
+                                <label for="cert-path">Certificate File (.p12 / .pfx)</label>
+                                <div class="file-input-group">
+                                    <input type="text" id="cert-path" readonly placeholder="Select certificate file...">
+                                    <button type="button" class="btn btn-secondary" onclick="selectCertificate()">Browse</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="cert-password">Certificate Password</label>
+                                <input type="password" id="cert-password" placeholder="Enter password">
+                            </div>
+                            <button type="button" class="btn btn-outline" onclick="validateCertificate()">Validate Certificate</button>
+                            <div id="cert-info" class="cert-info" style="display: none;"></div>
+                        </div>
+
+                        <!-- Application Section -->
+                        <div class="form-section">
+                            <h3>Application</h3>
+                            <div class="form-group">
+                                <label for="app-file">Application File (.yaml / .json)</label>
+                                <div class="file-input-group">
+                                    <input type="text" id="app-file" readonly placeholder="Select application file...">
+                                    <button type="button" class="btn btn-secondary" onclick="selectApplication()">Browse</button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline" onclick="validateApplication()">Validate Application</button>
+                            <div id="app-validation" class="validation-result" style="display: none;"></div>
+                        </div>
+
+                        <!-- Options Section -->
+                        <div class="form-section">
+                            <h3>Options</h3>
+                            <div class="form-group checkbox-group">
+                                <label>
+                                    <input type="checkbox" id="headless-mode" checked>
+                                    <span>Run in headless mode (no browser window)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-large">
+                                <span>🚀</span> Submit Application
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Applications Page -->
+            <section class="page" id="page-applications">
+                <header class="page-header">
+                    <h1>Applications</h1>
+                    <p>Manage your application files</p>
+                </header>
+
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="createSampleApplication()">
+                        <span>➕</span> Create Sample
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadApplications()">
+                        <span>🔄</span> Refresh
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table" id="applications-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Country</th>
+                                <th>Applicant</th>
+                                <th>Description</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="empty-state">Loading applications...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Results Page -->
+            <section class="page" id="page-results">
+                <header class="page-header">
+                    <h1>Results</h1>
+                    <p>View submission results</p>
+                </header>
+
+                <div class="toolbar">
+                    <button class="btn btn-secondary" onclick="loadResults()">
+                        <span>🔄</span> Refresh
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table" id="results-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Country</th>
+                                <th>Status</th>
+                                <th>Reference</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="empty-state">Loading results...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Scheduler Page -->
+            <section class="page" id="page-scheduler">
+                <header class="page-header">
+                    <h1>Scheduler</h1>
+                    <p>Configure automatic submissions</p>
+                </header>
+
+                <div class="scheduler-container">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Schedule Configuration</h3>
+                            <div class="scheduler-status" id="scheduler-status">
+                                <span class="status-badge inactive">Inactive</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <form id="scheduler-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="schedule-hour">Hour (0-23)</label>
+                                        <input type="number" id="schedule-hour" min="0" max="23" value="9">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="schedule-minute">Minute (0-59)</label>
+                                        <input type="number" id="schedule-minute" min="0" max="59" value="0">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="schedule-cert">Certificate File</label>
+                                    <div class="file-input-group">
+                                        <input type="text" id="schedule-cert" readonly placeholder="Select certificate...">
+                                        <button type="button" class="btn btn-secondary" onclick="selectSchedulerCert()">Browse</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="schedule-password">Certificate Password</label>
+                                    <input type="password" id="schedule-password" placeholder="Enter password">
+                                </div>
+                                <div class="form-actions">
+                                    <button type="button" class="btn btn-primary" onclick="startScheduler()">
+                                        <span>▶️</span> Start Scheduler
+                                    </button>
+                                    <button type="button" class="btn btn-danger" onclick="stopScheduler()">
+                                        <span>⏹️</span> Stop Scheduler
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Page -->
+            <section class="page" id="page-settings">
+                <header class="page-header">
+                    <h1>Settings</h1>
+                    <p>Configure bot settings</p>
+                </header>
+
+                <div class="settings-container">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Certificate Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="default-cert">Default Certificate Path</label>
+                                <div class="file-input-group">
+                                    <input type="text" id="default-cert" placeholder="./certificates/certificate.p12">
+                                    <button type="button" class="btn btn-secondary" onclick="selectDefaultCert()">Browse</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Browser Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group checkbox-group">
+                                <label>
+                                    <input type="checkbox" id="setting-headless" checked>
+                                    <span>Default to headless mode</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label for="setting-timeout">Timeout (seconds)</label>
+                                <input type="number" id="setting-timeout" value="30" min="10" max="120">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>About</h3>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>EU Registry Bot</strong></p>
+                            <p>Version 1.0.0</p>
+                            <p>Automated submission bot for EU government portals</p>
+                            <div class="supported-countries">
+                                <span class="country-badge">🇵🇹 Portugal</span>
+                                <span class="country-badge">🇫🇷 France</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Modal Title</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/app.js"></script>
+</body>
+</html>

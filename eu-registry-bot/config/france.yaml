@@ -1,0 +1,141 @@
+# France Portal Configuration
+
+portal:
+  name: "France - Service-Public.fr"
+  base_url: "https://www.service-public.gouv.fr"
+  enterprise_url: "https://entreprendre.service-public.gouv.fr"
+  forms_url: "https://www.formulaires.service-public.gouv.fr"
+  language: "fr"
+
+authentication:
+  # Authentication methods supported
+  methods:
+    - certificate  # Electronic certificate (eIDAS)
+    - franceconnect  # FranceConnect (OAuth-based)
+    - franceconnect_plus  # Enhanced authentication
+
+  # Recommended for automation
+  preferred_method: "certificate"
+
+  # Certificate requirements
+  certificate:
+    type: "eidas"  # eIDAS compliant certificate
+    # Qualified electronic signature required for some procedures
+
+endpoints:
+  login: "/connexion"
+  services: "/particuliers/vosdroits"
+  enterprise_services: "/vosdroits"
+
+forms:
+  # Public road installation permit - Cerfa 14023*01
+  installation_voie_publique:
+    name: "Permission de voirie / Permis de stationnement"
+    cerfa_number: "14023*01"
+    url: "/vosdroits/R17000"
+
+    # Target authority depends on location
+    authorities:
+      commune: "Mairie"
+      metropolitaine: "EPCI"
+      departementale: "Services du département"
+      nationale: "Direction interdépartementale des routes (Dir)"
+
+    fields:
+      - name: "civilite"
+        type: "select"
+        required: true
+        options: ["M.", "Mme"]
+        description: "Title"
+
+      - name: "nom"
+        type: "text"
+        required: true
+        description: "Last name"
+
+      - name: "prenom"
+        type: "text"
+        required: true
+        description: "First name"
+
+      - name: "adresse"
+        type: "text"
+        required: true
+        description: "Address"
+
+      - name: "code_postal"
+        type: "text"
+        required: true
+        description: "Postal code"
+
+      - name: "commune"
+        type: "text"
+        required: true
+        description: "City"
+
+      - name: "email"
+        type: "email"
+        required: true
+        description: "Email address"
+
+      - name: "telephone"
+        type: "text"
+        required: false
+        description: "Phone number"
+
+      - name: "siret"
+        type: "text"
+        required: false
+        description: "SIRET number (for businesses)"
+
+      - name: "objet_demande"
+        type: "textarea"
+        required: true
+        description: "Purpose of request"
+
+      - name: "lieu_installation"
+        type: "text"
+        required: true
+        description: "Installation location"
+
+      - name: "date_debut"
+        type: "date"
+        required: true
+        description: "Start date"
+
+      - name: "date_fin"
+        type: "date"
+        required: false
+        description: "End date"
+
+      - name: "superficie"
+        type: "text"
+        required: false
+        description: "Surface area (m²)"
+
+    attachments:
+      - name: "piece_identite"
+        required: true
+        formats: ["pdf", "jpg", "png"]
+        max_size_mb: 5
+
+      - name: "plan_situation"
+        required: true
+        formats: ["pdf"]
+        max_size_mb: 10
+
+      - name: "plan_installation"
+        required: true
+        formats: ["pdf"]
+        max_size_mb: 10
+
+selectors:
+  # CSS/XPath selectors for automation
+  login_button: "#se-connecter"
+  certificate_option: ".auth-certificate"
+  location_input: "#commune-input"
+  location_autocomplete: ".autocomplete-results"
+  submit_button: "#envoyer"
+  success_message: ".fr-alert--success"
+  error_message: ".fr-alert--error"
+  receipt_download: ".telecharger-recepisse"
