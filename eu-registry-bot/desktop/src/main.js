@@ -1,10 +1,42 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 let mainWindow;
 let pythonProcess = null;
 const API_PORT = 5000;
+
+function getResourcePath() {
+    if (app.isPackaged) {
+        return path.dirname(app.getPath('exe'));
+    }
+    return path.join(__dirname, '..', '..');
+}
+
+function getApiServerPath() {
+    const resourcePath = getResourcePath();
+
+    // Check for bundled executable (production)
+    const exePaths = [
+        path.join(resourcePath, 'api_server.exe'),
+        path.join(resourcePath, 'api_server'),
+    ];
+
+    for (const exePath of exePaths) {
+        if (fs.existsSync(exePath)) {
+            return { type: 'exe', path: exePath };
+        }
+    }
+
+    // Fall back to Python script (development)
+    const scriptPath = path.join(resourcePath, 'api', 'server.py');
+    if (fs.existsSync(scriptPath)) {
+        return { type: 'python', path: scriptPath };
+    }
+
+    return null;
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -25,7 +57,6 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'pages', 'index.html'));
 
-    // Open DevTools in development
     if (process.env.NODE_ENV === 'development') {
         mainWindow.webContents.openDevTools();
     }
@@ -36,13 +67,28 @@ function createWindow() {
 }
 
 function startPythonAPI() {
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-    const apiScript = path.join(__dirname, '..', '..', 'api', 'server.py');
+    const apiServer = getApiServerPath();
+    const cwd = getResourcePath();
 
-    pythonProcess = spawn(pythonPath, [apiScript], {
-        cwd: path.join(__dirname, '..', '..'),
-        env: { ...process.env, FLASK_PORT: API_PORT }
-    });
+    if (!apiServer) {
+        console.error('API server not found!');
+        return;
+    }
+
+    console.log(`Starting API: ${apiServer.type} - ${apiServer.path}`);
+
+    if (apiServer.type === 'exe') {
+        pythonProcess = spawn(apiServer.path, [], {
+            cwd: cwd,
+            env: { ...process.env, FLASK_PORT: API_PORT }
+        });
+    } else {
+        const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+        pythonProcess = spawn(pythonPath, [apiServer.path], {
+            cwd: cwd,
+            env: { ...process.env, FLASK_PORT: API_PORT }
+        });
+    }
 
     pythonProcess.stdout.on('data', (data) => {
         console.log(`API: ${data}`);
@@ -59,7 +105,11 @@ function startPythonAPI() {
 
 function stopPythonAPI() {
     if (pythonProcess) {
-        pythonProcess.kill();
+        if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', pythonProcess.pid, '/f', '/t']);
+        } else {
+            pythonProcess.kill();
+        }
         pythonProcess = null;
     }
 }
@@ -88,11 +138,14 @@ ipcMain.handle('get-api-url', () => {
     return `http://localhost:${API_PORT}`;
 });
 
+ipcMain.handle('get-app-path', () => {
+    return getResourcePath();
+});
+
 // App lifecycle
 app.whenReady().then(() => {
     startPythonAPI();
 
-    // Wait for API to start
     setTimeout(() => {
         createWindow();
     }, 2000);
