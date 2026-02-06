@@ -366,5 +366,209 @@ class TestCaptchaHandler:
         assert "CAPTCHA detected" in notification_received[0]
 
 
+class TestExcelReader:
+    """Tests for ExcelReader (requires openpyxl)."""
+
+    @pytest.fixture
+    def sample_excel(self, tmp_path):
+        """Create a sample Excel file for testing."""
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Municipalities"
+
+        # Headers
+        ws['A1'] = 'Code'
+        ws['B1'] = 'Municipality'
+        ws['C1'] = 'Province'
+        ws['D1'] = 'Population'
+        ws['E1'] = 'Status'
+
+        # Data rows
+        data = [
+            ('L01001', 'Test City 1', 'Province A', 50000, 'pending'),
+            ('L01002', 'Test City 2', 'Province A', 30000, 'pending'),
+            ('L01003', 'Test City 3', 'Province B', 75000, 'completed'),
+            ('L01004', 'Test City 4', 'Province B', 20000, 'pending'),
+        ]
+
+        for row_idx, row_data in enumerate(data, start=2):
+            for col_idx, value in enumerate(row_data, start=1):
+                ws.cell(row=row_idx, column=col_idx, value=value)
+
+        file_path = tmp_path / "test_municipalities.xlsx"
+        wb.save(file_path)
+        wb.close()
+
+        return str(file_path)
+
+    def test_excel_reader_basic(self, sample_excel):
+        """Test basic Excel reading functionality."""
+        try:
+            from src.utils.excel_reader import ExcelReader, MunicipalityRecord
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        reader = ExcelReader(
+            sample_excel,
+            custom_mappings={
+                'code': 'code',
+                'municipality': 'name',
+                'province': 'province',
+                'population': 'population_total',
+                'status': 'status',
+            }
+        )
+
+        records = reader.read_all()
+        reader.close()
+
+        assert len(records) == 4
+        assert records[0].code == 'L01001'
+        assert records[0].name == 'Test City 1'
+        assert records[0].province == 'Province A'
+        assert records[0].population_total == 50000
+
+    def test_excel_reader_generator(self, sample_excel):
+        """Test generator-based reading for memory efficiency."""
+        try:
+            from src.utils.excel_reader import ExcelReader
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        with ExcelReader(
+            sample_excel,
+            custom_mappings={
+                'code': 'code',
+                'municipality': 'name',
+            }
+        ) as reader:
+            count = 0
+            for record in reader.read_generator():
+                count += 1
+                assert record.name is not None
+
+            assert count == 4
+
+    def test_excel_reader_summary(self, sample_excel):
+        """Test getting file summary."""
+        try:
+            from src.utils.excel_reader import ExcelReader
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        reader = ExcelReader(
+            sample_excel,
+            custom_mappings={
+                'code': 'code',
+                'municipality': 'name',
+            }
+        )
+
+        summary = reader.get_summary()
+        reader.close()
+
+        assert summary['data_rows'] == 4
+        assert 'code' in summary['mapped_columns']
+        assert 'name' in summary['mapped_columns']
+
+    def test_excel_reader_file_not_found(self):
+        """Test handling of missing file."""
+        try:
+            from src.utils.excel_reader import ExcelReader
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        reader = ExcelReader("/nonexistent/file.xlsx")
+
+        with pytest.raises(FileNotFoundError):
+            reader.read_all()
+
+
+class TestBatchProcessor:
+    """Tests for BatchProcessor."""
+
+    @pytest.fixture
+    def sample_records(self):
+        """Create sample MunicipalityRecord objects."""
+        try:
+            from src.utils.excel_reader import MunicipalityRecord
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        return [
+            MunicipalityRecord(code='L01', name='City 1', status='pending', row_number=2),
+            MunicipalityRecord(code='L02', name='City 2', status='pending', row_number=3),
+            MunicipalityRecord(code='L03', name='City 3', status='completed', row_number=4),
+        ]
+
+    def test_batch_processor_success(self, sample_records):
+        """Test successful batch processing."""
+        try:
+            from src.utils.excel_reader import BatchProcessor, ExcelBatchResult
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        # Mock ExcelReader
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = sample_records
+
+        processed = []
+
+        def process_func(record):
+            processed.append(record.name)
+
+        processor = BatchProcessor(
+            mock_reader,
+            process_func,
+            skip_statuses=['completed'],
+        )
+
+        result = processor.run()
+
+        assert result.total_records == 3
+        assert result.successful == 2
+        assert result.skipped == 1
+        assert len(processed) == 2
+        assert 'City 1' in processed
+        assert 'City 2' in processed
+
+    def test_batch_processor_with_errors(self, sample_records):
+        """Test batch processing with failures."""
+        try:
+            from src.utils.excel_reader import BatchProcessor
+        except ImportError:
+            pytest.skip("openpyxl not installed")
+
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = sample_records[:2]  # Only pending ones
+
+        def process_func(record):
+            if record.code == 'L02':
+                raise RuntimeError("Test error")
+
+        errors_received = []
+
+        def on_error(record, error):
+            errors_received.append((record.code, str(error)))
+
+        processor = BatchProcessor(
+            mock_reader,
+            process_func,
+            on_error=on_error,
+        )
+
+        result = processor.run()
+
+        assert result.successful == 1
+        assert result.failed == 1
+        assert len(errors_received) == 1
+        assert errors_received[0][0] == 'L02'
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

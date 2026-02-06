@@ -13,6 +13,24 @@ from .retry import (
 )
 from .state import StateManager, SubmissionState, SubmissionStep
 
+# Excel support (optional - requires openpyxl)
+try:
+    from .excel_reader import (
+        ExcelReader,
+        BatchProcessor,
+        MunicipalityRecord,
+        ExcelBatchResult,
+        ExcelColumnMapping,
+    )
+    EXCEL_SUPPORT = True
+except ImportError:
+    EXCEL_SUPPORT = False
+    ExcelReader = None
+    BatchProcessor = None
+    MunicipalityRecord = None
+    ExcelBatchResult = None
+    ExcelColumnMapping = None
+
 __all__ = [
     "FileHandler",
     "CaptchaDetector",
@@ -27,4 +45,10 @@ __all__ = [
     "StateManager",
     "SubmissionState",
     "SubmissionStep",
+    "EXCEL_SUPPORT",
+    "ExcelReader",
+    "BatchProcessor",
+    "MunicipalityRecord",
+    "ExcelBatchResult",
+    "ExcelColumnMapping",
 ]
