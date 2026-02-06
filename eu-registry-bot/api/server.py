@@ -24,9 +24,11 @@ from src.models.result import SubmissionResult, SubmissionStatus
 from src.portals.portugal import PortugalPortal
 from src.portals.france import FrancePortal
 from src.utils.file_handler import FileHandler
-from src.utils import EXCEL_SUPPORT
+from src.utils import EXCEL_SUPPORT, DATA_READER_SUPPORT
 if EXCEL_SUPPORT:
     from src.utils import ExcelReader, BatchProcessor, MunicipalityRecord
+if DATA_READER_SUPPORT:
+    from src.utils import DataReader
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -467,21 +469,22 @@ def check_excel_support():
 
 @app.route("/api/excel/preview", methods=["POST"])
 def preview_excel():
-    """Preview an Excel file contents."""
-    if not EXCEL_SUPPORT:
-        return jsonify({"error": "Excel support not available. Install openpyxl."}), 400
+    """Preview a data file contents (Excel, CSV, DOCX)."""
+    if not DATA_READER_SUPPORT:
+        return jsonify({"error": "Data reader support not available."}), 400
 
     data = request.json
     file_path = data.get("path")
 
     if not file_path or not os.path.exists(file_path):
-        return jsonify({"error": "Excel file not found"}), 400
+        return jsonify({"error": "Data file not found"}), 400
 
     try:
         # Custom column mappings if provided
         custom_mappings = data.get("column_mappings", {})
 
-        reader = ExcelReader(file_path, custom_mappings=custom_mappings)
+        # Use DataReader which auto-detects format (.xlsx, .csv, .docx)
+        reader = DataReader(file_path, custom_mappings=custom_mappings)
         summary = reader.get_summary()
         records = reader.read_all()
         reader.close()
@@ -557,16 +560,16 @@ def run_batch_processing(
 
         add_log("Certificate loaded and verified")
 
-        # Load Excel file
-        bot_state["current_task"] = "Loading Excel file..."
+        # Load data file (Excel, CSV, DOCX)
+        bot_state["current_task"] = "Loading data file..."
         bot_state["progress"] = 10
 
-        reader = ExcelReader(excel_path)
+        reader = DataReader(excel_path)
         records = reader.read_all()
         reader.close()
 
         total = len(records)
-        add_log(f"Loaded {total} records from Excel")
+        add_log(f"Loaded {total} records from data file")
 
         # Initialize portal
         config_path = f"./config/{country}.yaml"
