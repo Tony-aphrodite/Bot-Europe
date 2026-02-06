@@ -38,14 +38,27 @@ pyinstaller --onefile --name api_server --distpath . --workpath build_temp --spe
     --hidden-import flask ^
     --hidden-import flask_cors ^
     --hidden-import selenium ^
+    --hidden-import selenium.webdriver ^
+    --hidden-import selenium.webdriver.chrome ^
+    --hidden-import selenium.webdriver.chrome.service ^
+    --hidden-import selenium.webdriver.chrome.options ^
+    --hidden-import selenium.webdriver.common.by ^
+    --hidden-import selenium.webdriver.support ^
+    --hidden-import selenium.webdriver.support.ui ^
+    --hidden-import selenium.webdriver.support.expected_conditions ^
     --hidden-import webdriver_manager ^
+    --hidden-import webdriver_manager.chrome ^
     --hidden-import cryptography ^
+    --hidden-import OpenSSL ^
     --hidden-import apscheduler ^
+    --hidden-import apscheduler.schedulers.background ^
+    --hidden-import apscheduler.triggers.cron ^
     --hidden-import yaml ^
     --hidden-import pydantic ^
     --hidden-import colorlog ^
-    --add-data "config;config" ^
-    --add-data "src;src" ^
+    --hidden-import openpyxl ^
+    --add-data "%cd%\config;config" ^
+    --add-data "%cd%\src;src" ^
     api/server.py
 
 if %errorlevel% neq 0 (
