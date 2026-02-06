@@ -556,3 +556,188 @@ document.getElementById('modal-overlay').addEventListener('click', (e) => {
         closeModal();
     }
 });
+
+// =============================================================================
+// Batch Processing
+// =============================================================================
+
+let currentSubmitMode = 'single';
+
+function setSubmitMode(mode) {
+    currentSubmitMode = mode;
+
+    // Update toggle buttons
+    document.getElementById('mode-single').classList.toggle('active', mode === 'single');
+    document.getElementById('mode-batch').classList.toggle('active', mode === 'batch');
+
+    // Show/hide forms
+    document.getElementById('single-form-container').style.display = mode === 'single' ? 'block' : 'none';
+    document.getElementById('batch-form-container').style.display = mode === 'batch' ? 'block' : 'none';
+}
+
+async function selectBatchCertificate() {
+    if (window.electronAPI) {
+        const path = await window.electronAPI.selectFile({
+            filters: [{ name: 'Certificates', extensions: ['p12', 'pfx'] }]
+        });
+        if (path) {
+            document.getElementById('batch-cert-path').value = path;
+        }
+    }
+}
+
+async function validateBatchCertificate() {
+    const path = document.getElementById('batch-cert-path').value;
+    const password = document.getElementById('batch-cert-password').value;
+
+    if (!path) {
+        showToast('Please select a certificate file', 'warning');
+        return;
+    }
+
+    try {
+        const data = await apiCall('/api/certificate/info', 'POST', { path, password });
+        const infoDiv = document.getElementById('batch-cert-info');
+        infoDiv.style.display = 'block';
+
+        if (data.error) {
+            infoDiv.className = 'cert-info invalid';
+            infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
+        } else {
+            infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
+            infoDiv.innerHTML = `
+                <p><strong>Subject:</strong> ${data.subject}</p>
+                <p><strong>Valid Until:</strong> ${new Date(data.valid_until).toLocaleDateString()}</p>
+                <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
+            `;
+        }
+    } catch (error) {
+        showToast('Failed to validate certificate', 'error');
+    }
+}
+
+async function selectBatchFile() {
+    if (window.electronAPI) {
+        const path = await window.electronAPI.selectFile({
+            filters: [{ name: 'Data Files', extensions: ['xlsx', 'xls', 'csv', 'docx'] }]
+        });
+        if (path) {
+            document.getElementById('batch-file').value = path;
+        }
+    }
+}
+
+async function previewBatchFile() {
+    const path = document.getElementById('batch-file').value;
+
+    if (!path) {
+        showToast('Please select a data file first', 'warning');
+        return;
+    }
+
+    try {
+        // Check Excel support
+        const supportData = await apiCall('/api/excel/support');
+        if (!supportData.supported) {
+            showToast('Excel support not available. Please install openpyxl.', 'error');
+            return;
+        }
+
+        showToast('Loading file preview...', 'info');
+
+        const data = await apiCall('/api/excel/preview', 'POST', { path });
+
+        if (data.error) {
+            showToast(data.error, 'error');
+            return;
+        }
+
+        // Show preview section
+        const previewDiv = document.getElementById('batch-preview');
+        previewDiv.style.display = 'block';
+
+        // Update info
+        document.getElementById('batch-file-info').textContent =
+            `File: ${path.split('/').pop() || path.split('\\').pop()} | Format: ${data.summary.format || 'Excel'}`;
+
+        // Update stats
+        document.getElementById('batch-total').textContent = data.total_records;
+        document.getElementById('batch-pending').textContent = data.status_counts.pending;
+        document.getElementById('batch-completed').textContent = data.status_counts.completed;
+
+        // Update preview table
+        const tbody = document.getElementById('batch-preview-body');
+        if (data.preview_records.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No records found</td></tr>';
+        } else {
+            tbody.innerHTML = data.preview_records.slice(0, 20).map((record, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${record.name}</td>
+                    <td>${record.province || '-'}</td>
+                    <td><span class="status-badge ${record.status}">${record.status}</span></td>
+                </tr>
+            `).join('');
+
+            if (data.total_records > 20) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td colspan="4" class="empty-state">
+                            ... and ${data.total_records - 20} more records
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        showToast(`Loaded ${data.total_records} records`, 'success');
+    } catch (error) {
+        console.error('Preview error:', error);
+        showToast('Failed to preview file', 'error');
+    }
+}
+
+// Setup batch form handler
+document.addEventListener('DOMContentLoaded', () => {
+    const batchForm = document.getElementById('batch-form');
+    if (batchForm) {
+        batchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleBatchSubmission();
+        });
+    }
+});
+
+async function handleBatchSubmission() {
+    const certPath = document.getElementById('batch-cert-path').value;
+    const certPassword = document.getElementById('batch-cert-password').value;
+    const batchFile = document.getElementById('batch-file').value;
+    const country = document.getElementById('batch-country').value;
+    const headless = document.getElementById('batch-headless').checked;
+    const skipCompleted = document.getElementById('batch-skip-completed').checked;
+
+    if (!certPath || !batchFile) {
+        showToast('Please select both certificate and data file', 'warning');
+        return;
+    }
+
+    try {
+        const data = await apiCall('/api/excel/batch', 'POST', {
+            excel_path: batchFile,
+            certificate_path: certPath,
+            certificate_password: certPassword,
+            country: country,
+            headless: headless,
+            skip_completed: skipCompleted,
+        });
+
+        if (data.error) {
+            showToast(data.error, 'error');
+        } else {
+            showToast('Batch processing started!', 'success');
+            navigateTo('dashboard');
+        }
+    } catch (error) {
+        showToast('Failed to start batch processing', 'error');
+    }
+}
