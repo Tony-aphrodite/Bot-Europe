@@ -88,21 +88,34 @@ forms:
         required: false
         description: "End date"
 
+    # Supported file formats for all attachments
+    supported_formats:
+      documents: ["pdf", "doc", "docx", "rtf", "odt", "txt"]
+      spreadsheets: ["xls", "xlsx", "ods"]
+      images: ["jpg", "jpeg", "png"]
+      archives: ["zip"]
+
+    max_file_size_mb: 10
+    max_total_size_mb: 50
+
     attachments:
       - name: "documento_identificacao"
         required: true
-        formats: ["pdf", "jpg", "png"]
+        formats: ["pdf", "jpg", "jpeg", "png", "doc", "docx"]
         max_size_mb: 5
+        description: "Identity document"
 
       - name: "plano_instalacao"
         required: true
-        formats: ["pdf"]
+        formats: ["pdf", "doc", "docx", "jpg", "png"]
         max_size_mb: 10
+        description: "Installation plan"
 
       - name: "outros_documentos"
         required: false
-        formats: ["pdf", "jpg", "png"]
+        formats: ["pdf", "doc", "docx", "xls", "xlsx", "jpg", "png", "rtf", "odt"]
         max_size_mb: 10
+        description: "Other supporting documents"
 
 selectors:
   # CSS/XPath selectors for automation

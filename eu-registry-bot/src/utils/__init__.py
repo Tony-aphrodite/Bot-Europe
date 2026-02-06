@@ -13,19 +13,27 @@ from .retry import (
 )
 from .state import StateManager, SubmissionState, SubmissionStep
 
-# Excel support (optional - requires openpyxl)
+# Data file support (Excel, CSV, DOCX)
 try:
     from .excel_reader import (
         ExcelReader,
+        CSVReader,
+        DocxReader,
+        DataReader,
         BatchProcessor,
         MunicipalityRecord,
         ExcelBatchResult,
         ExcelColumnMapping,
     )
     EXCEL_SUPPORT = True
+    DATA_READER_SUPPORT = True
 except ImportError:
     EXCEL_SUPPORT = False
+    DATA_READER_SUPPORT = False
     ExcelReader = None
+    CSVReader = None
+    DocxReader = None
+    DataReader = None
     BatchProcessor = None
     MunicipalityRecord = None
     ExcelBatchResult = None
@@ -46,7 +54,11 @@ __all__ = [
     "SubmissionState",
     "SubmissionStep",
     "EXCEL_SUPPORT",
+    "DATA_READER_SUPPORT",
     "ExcelReader",
+    "CSVReader",
+    "DocxReader",
+    "DataReader",
     "BatchProcessor",
     "MunicipalityRecord",
     "ExcelBatchResult",

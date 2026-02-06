@@ -1,8 +1,12 @@
 """
-Excel batch processing module for municipality lists
+Data file batch processing module for municipality lists.
+Supports: .xlsx, .xls, .csv, .docx
 """
 
 import os
+import csv
+import zipfile
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional, Generator
 from dataclasses import dataclass, field
 from enum import Enum
@@ -18,7 +22,7 @@ try:
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
-    logger.warning("openpyxl not installed. Excel support disabled. Install with: pip install openpyxl")
+    logger.warning("openpyxl not installed. Excel (.xlsx) support disabled.")
 
 
 class ExcelColumnMapping(Enum):
@@ -165,7 +169,7 @@ class ExcelReader:
 
         ext = os.path.splitext(self.file_path)[1].lower()
         if ext not in ('.xlsx', '.xls', '.xlsm'):
-            raise ValueError(f"Unsupported file format: {ext}. Use .xlsx, .xls, or .xlsm")
+            raise ValueError(f"Unsupported file format: {ext}. Use .xlsx, .xls, .xlsm, or use DataReader for other formats")
 
     def _load_workbook(self) -> None:
         """Load the Excel workbook."""
@@ -453,3 +457,315 @@ class BatchProcessor:
         )
 
         return result
+
+
+class CSVReader:
+    """
+    Reads municipality lists from CSV files.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        delimiter: str = ',',
+        encoding: str = 'utf-8',
+        custom_mappings: Optional[Dict[str, str]] = None,
+    ):
+        self.file_path = file_path
+        self.delimiter = delimiter
+        self.encoding = encoding
+        self.custom_mappings = custom_mappings or {}
+        self._column_map: Dict[int, ExcelColumnMapping] = {}
+
+    def _detect_delimiter(self) -> str:
+        """Auto-detect CSV delimiter."""
+        with open(self.file_path, 'r', encoding=self.encoding) as f:
+            first_line = f.readline()
+            if ';' in first_line and ',' not in first_line:
+                return ';'
+            elif '\t' in first_line:
+                return '\t'
+            return ','
+
+    def read_all(self) -> List[MunicipalityRecord]:
+        """Read all records from CSV."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"CSV file not found: {self.file_path}")
+
+        logger.info(f"Loading CSV file: {self.file_path}")
+
+        # Auto-detect delimiter
+        delimiter = self._detect_delimiter()
+
+        records = []
+        with open(self.file_path, 'r', encoding=self.encoding, errors='replace') as f:
+            reader = csv.DictReader(f, delimiter=delimiter)
+
+            for row_idx, row in enumerate(reader, start=2):
+                try:
+                    # Map columns
+                    data = {}
+                    for key, value in row.items():
+                        if key is None:
+                            continue
+                        key_lower = key.strip().lower()
+
+                        # Check custom mappings
+                        if key_lower in self.custom_mappings:
+                            field_name = self.custom_mappings[key_lower]
+                            data[field_name] = value.strip() if value else ""
+                        # Check default mappings
+                        elif key_lower in ExcelReader.DEFAULT_COLUMN_MAPPINGS:
+                            mapping = ExcelReader.DEFAULT_COLUMN_MAPPINGS[key_lower]
+                            data[mapping.value] = value.strip() if value else ""
+
+                    # Create record if we have a name
+                    name = data.get('name', '')
+                    if name:
+                        record = MunicipalityRecord(
+                            code=data.get('code', f'CSV_{row_idx}'),
+                            name=name,
+                            province=data.get('province'),
+                            status=data.get('status', 'pending'),
+                            row_number=row_idx,
+                        )
+                        # Parse population if present
+                        if 'population_total' in data and data['population_total']:
+                            try:
+                                record.population_total = int(data['population_total'])
+                            except ValueError:
+                                pass
+                        records.append(record)
+
+                except Exception as e:
+                    logger.warning(f"Error parsing CSV row {row_idx}: {e}")
+
+        logger.info(f"Read {len(records)} records from CSV")
+        return records
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get CSV file summary."""
+        records = self.read_all()
+        return {
+            "file_path": self.file_path,
+            "data_rows": len(records),
+            "format": "CSV",
+        }
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+class DocxReader:
+    """
+    Reads municipality lists from Word documents (.docx).
+    Parses tables or structured text with municipality data.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        custom_mappings: Optional[Dict[str, str]] = None,
+    ):
+        self.file_path = file_path
+        self.custom_mappings = custom_mappings or {}
+
+    def _extract_text(self) -> List[str]:
+        """Extract text paragraphs from docx."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"DOCX file not found: {self.file_path}")
+
+        with zipfile.ZipFile(self.file_path, 'r') as zip_ref:
+            xml_content = zip_ref.read('word/document.xml')
+
+        root = ET.fromstring(xml_content)
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+        paragraphs = []
+        for p in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
+            text_parts = []
+            for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'):
+                if t.text:
+                    text_parts.append(t.text)
+            if text_parts:
+                text = ''.join(text_parts).strip()
+                if text:
+                    paragraphs.append(text)
+
+        return paragraphs
+
+    def read_all(self) -> List[MunicipalityRecord]:
+        """
+        Read municipality data from docx.
+        Expects format: Municipality name followed by a number (count/population).
+        """
+        logger.info(f"Loading DOCX file: {self.file_path}")
+        paragraphs = self._extract_text()
+
+        records = []
+        current_province = None
+        i = 0
+
+        while i < len(paragraphs):
+            text = paragraphs[i]
+
+            # Skip header lines
+            if any(skip in text.lower() for skip in [
+                'equipos de', 'total de', 'municipio', 'total equipos',
+                'header', 'título', 'title'
+            ]):
+                i += 1
+                continue
+
+            # Check for province/region header (e.g., "Anexo:Municipios de Álava")
+            if text.startswith("Anexo:"):
+                current_province = text.replace("Anexo:Municipios de ", "").replace("Anexo: Municipios de ", "").strip()
+                i += 1
+                continue
+
+            # Try to parse as municipality (name followed by number)
+            if i + 1 < len(paragraphs):
+                name = text
+                try:
+                    count = int(paragraphs[i + 1])
+                    record = MunicipalityRecord(
+                        code=f"DOCX_{len(records) + 1:05d}",
+                        name=name,
+                        province=current_province,
+                        population_total=count,
+                        status="pending",
+                        row_number=len(records) + 1,
+                    )
+                    records.append(record)
+                    i += 2
+                    continue
+                except ValueError:
+                    pass
+
+            i += 1
+
+        logger.info(f"Read {len(records)} records from DOCX")
+        return records
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get DOCX file summary."""
+        records = self.read_all()
+        return {
+            "file_path": self.file_path,
+            "data_rows": len(records),
+            "format": "DOCX",
+        }
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+class DataReader:
+    """
+    Unified reader that automatically detects file format.
+    Supports: .xlsx, .xls, .csv, .docx
+    """
+
+    SUPPORTED_FORMATS = {
+        '.xlsx': 'excel',
+        '.xls': 'excel',
+        '.xlsm': 'excel',
+        '.csv': 'csv',
+        '.docx': 'docx',
+    }
+
+    def __init__(
+        self,
+        file_path: str,
+        custom_mappings: Optional[Dict[str, str]] = None,
+        **kwargs
+    ):
+        """
+        Initialize unified data reader.
+
+        Args:
+            file_path: Path to data file
+            custom_mappings: Column name to field mappings
+            **kwargs: Additional arguments for specific readers
+        """
+        self.file_path = file_path
+        self.custom_mappings = custom_mappings or {}
+        self.kwargs = kwargs
+        self._reader = None
+        self._format = None
+
+        self._detect_format()
+        self._create_reader()
+
+    def _detect_format(self):
+        """Detect file format from extension."""
+        ext = os.path.splitext(self.file_path)[1].lower()
+
+        if ext not in self.SUPPORTED_FORMATS:
+            raise ValueError(
+                f"Unsupported file format: {ext}. "
+                f"Supported formats: {list(self.SUPPORTED_FORMATS.keys())}"
+            )
+
+        self._format = self.SUPPORTED_FORMATS[ext]
+        logger.info(f"Detected format: {self._format} for {self.file_path}")
+
+    def _create_reader(self):
+        """Create appropriate reader based on format."""
+        if self._format == 'excel':
+            if not OPENPYXL_AVAILABLE:
+                raise ImportError("openpyxl required for Excel files. Install: pip install openpyxl")
+            self._reader = ExcelReader(
+                self.file_path,
+                custom_mappings=self.custom_mappings,
+                **{k: v for k, v in self.kwargs.items() if k in ['sheet_name', 'header_row']}
+            )
+        elif self._format == 'csv':
+            self._reader = CSVReader(
+                self.file_path,
+                custom_mappings=self.custom_mappings,
+                **{k: v for k, v in self.kwargs.items() if k in ['delimiter', 'encoding']}
+            )
+        elif self._format == 'docx':
+            self._reader = DocxReader(
+                self.file_path,
+                custom_mappings=self.custom_mappings,
+            )
+
+    def read_all(self) -> List[MunicipalityRecord]:
+        """Read all records from the file."""
+        return self._reader.read_all()
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get file summary."""
+        summary = self._reader.get_summary()
+        summary['detected_format'] = self._format
+        return summary
+
+    def close(self):
+        """Close the reader."""
+        if self._reader:
+            self._reader.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    @staticmethod
+    def get_supported_formats() -> List[str]:
+        """Get list of supported file extensions."""
+        return list(DataReader.SUPPORTED_FORMATS.keys())
