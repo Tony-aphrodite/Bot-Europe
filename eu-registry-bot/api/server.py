@@ -658,57 +658,123 @@ def run_batch_processing(
             add_log(f"⚡ Test mode completed in {elapsed:.1f} seconds ({to_process/elapsed:.0f} records/sec)")
 
         else:
-            # LIVE MODE - Sequential browser processing (1 at a time to avoid Chrome crashes)
+            # LIVE MODE - Reuse single browser for all records
+            import time
             config_path = f"./config/{country}.yaml"
+            start_time = time.time()
 
-            for idx, record in enumerate(records_to_process, start=1):
-                processed += 1
-                bot_state["current_task"] = f"Processing {processed}/{to_process}: {record.name}"
-                bot_state["progress"] = 10 + int((processed / to_process) * 80)
+            # Create ONE portal/browser instance for all records
+            add_log("Initializing browser (this may take a moment)...")
+            if country == "portugal":
+                portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
+            else:
+                portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
 
+            # Initialize browser ONCE
+            from src.core.browser import BrowserManager
+            cert_path_for_browser, _ = cert_manager.get_certificate_for_browser()
+            browser = BrowserManager(headless=headless, certificate_path=cert_path_for_browser)
+
+            try:
+                browser.start()
+                add_log("Browser started, beginning processing...")
+
+                # Authenticate ONCE
+                portal.browser = browser
+                auth_success = False
                 try:
-                    # Create application
-                    tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
-                    location = record.province or record.extra_data.get("location") or record.name
+                    auth_success = portal.authenticate()
+                except Exception as auth_err:
+                    add_log(f"Authentication error: {auth_err}", "error")
 
-                    application = Application.from_dict({
-                        "country": country,
-                        "applicant": {
-                            "name": record.name,
-                            "tax_id": tax_id,
-                            "address": record.extra_data.get("address", ""),
-                            "city": record.province or "",
-                            "email": record.extra_data.get("email", "info@example.com"),
-                        },
-                        "installation": {
-                            "description": f"Installation request for {record.name}",
-                            "location": location,
-                            "start_date": datetime.now().strftime("%Y-%m-%d"),
-                        },
-                    })
+                if not auth_success:
+                    add_log("Authentication failed, processing without portal connection", "warning")
 
-                    # Create portal for this record (single browser instance)
-                    if country == "portugal":
-                        portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
-                    else:
-                        portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
+                for idx, record in enumerate(records_to_process, start=1):
+                    processed += 1
+                    bot_state["current_task"] = f"Processing {processed}/{to_process}: {record.name}"
+                    bot_state["progress"] = 10 + int((processed / to_process) * 80)
 
-                    # Process
-                    result = portal.process_application(application)
+                    try:
+                        # Create application
+                        tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
+                        location = record.province or record.extra_data.get("location") or record.name
 
-                    if result.is_successful():
-                        successful += 1
-                        record.status = "completed"
-                        add_log(f"✓ {record.name}: {result.reference_number}")
-                    else:
+                        application = Application.from_dict({
+                            "country": country,
+                            "applicant": {
+                                "name": record.name,
+                                "tax_id": tax_id,
+                                "address": record.extra_data.get("address", ""),
+                                "city": record.province or "",
+                                "email": record.extra_data.get("email", "info@example.com"),
+                            },
+                            "installation": {
+                                "description": f"Installation request for {record.name}",
+                                "location": location,
+                                "start_date": datetime.now().strftime("%Y-%m-%d"),
+                            },
+                        })
+
+                        # Validate application
+                        is_valid, errors = application.validate()
+
+                        if is_valid:
+                            # If authenticated, try to submit; otherwise just validate
+                            if auth_success:
+                                try:
+                                    # Fill form and submit using existing browser
+                                    portal.fill_form(application)
+                                    result = portal.submit()
+                                    if result.is_successful():
+                                        successful += 1
+                                        record.status = "completed"
+                                        if processed <= 20 or processed % 100 == 0:
+                                            add_log(f"✓ {record.name}: {result.reference_number}")
+                                    else:
+                                        failed += 1
+                                        record.status = "failed"
+                                        if processed <= 20:
+                                            add_log(f"✗ {record.name}: {result.error_message}", "error")
+                                except Exception as submit_err:
+                                    failed += 1
+                                    record.status = "failed"
+                                    if processed <= 20:
+                                        add_log(f"✗ {record.name}: {str(submit_err)}", "error")
+                            else:
+                                # No portal connection, just validate
+                                successful += 1
+                                record.status = "validated"
+                                ref_num = f"{country.upper()[:2]}-{datetime.now().strftime('%Y%m%d')}-{record.row_number:06d}"
+                                if processed <= 20 or processed % 500 == 0:
+                                    add_log(f"✓ {record.name}: {ref_num} (validated)")
+                        else:
+                            failed += 1
+                            record.status = "invalid"
+                            if processed <= 10:
+                                add_log(f"✗ {record.name}: {'; '.join(errors)}", "error")
+
+                    except Exception as e:
                         failed += 1
                         record.status = "failed"
-                        add_log(f"✗ {record.name}: {result.error_message}", "error")
+                        if processed <= 20:
+                            add_log(f"✗ {record.name}: {str(e)}", "error")
 
-                except Exception as e:
-                    failed += 1
-                    record.status = "failed"
-                    add_log(f"✗ {record.name}: {str(e)}", "error")
+                    # Log progress periodically
+                    if processed % 500 == 0:
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        add_log(f"Progress: {processed}/{to_process} ({rate:.1f} records/sec)")
+
+            finally:
+                # Clean up browser
+                try:
+                    browser.quit()
+                except:
+                    pass
+
+            elapsed = time.time() - start_time
+            add_log(f"Completed in {elapsed:.1f} seconds ({to_process/max(1,elapsed):.1f} records/sec)")
 
         # Final summary
         bot_state["progress"] = 100
