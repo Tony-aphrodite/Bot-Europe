@@ -124,25 +124,42 @@ def get_certificate_info():
     cert_path = data.get("path")
     cert_password = data.get("password", "")
 
-    if not cert_path or not os.path.exists(cert_path):
-        return jsonify({"error": "Certificate file not found"}), 400
+    add_log(f"Certificate info request: {cert_path}")
+
+    if not cert_path:
+        return jsonify({"error": "No certificate path provided"}), 400
+
+    if not os.path.exists(cert_path):
+        add_log(f"Certificate file not found: {cert_path}", "error")
+        return jsonify({"error": f"Certificate file not found: {cert_path}"}), 400
 
     try:
         cert_manager = CertificateManager(cert_path, cert_password)
         if not cert_manager.load():
+            add_log("Failed to load certificate - check password", "error")
             return jsonify({"error": "Failed to load certificate. Check password."}), 400
 
         info = cert_manager.get_info()
+        if not info:
+            return jsonify({"error": "Failed to get certificate info"}), 400
+
+        # Handle datetime serialization (may have timezone info)
+        valid_from = str(info.not_valid_before)
+        valid_until = str(info.not_valid_after)
+
+        add_log(f"Certificate loaded: {info.subject[:50]}...", "info")
+
         return jsonify({
             "subject": info.subject,
             "issuer": info.issuer,
             "serial_number": str(info.serial_number),
-            "valid_from": info.not_valid_before.isoformat(),
-            "valid_until": info.not_valid_after.isoformat(),
+            "valid_from": valid_from,
+            "valid_until": valid_until,
             "days_until_expiry": info.days_until_expiry,
             "is_valid": info.is_valid,
         })
     except Exception as e:
+        add_log(f"Certificate error: {str(e)}", "error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -153,15 +170,29 @@ def validate_certificate():
     cert_path = data.get("path")
     cert_password = data.get("password", "")
 
+    add_log(f"Certificate validation request: {cert_path}")
+
     if not cert_path:
         return jsonify({"valid": False, "error": "No certificate path provided"}), 400
 
+    if not os.path.exists(cert_path):
+        add_log(f"Certificate file not found: {cert_path}", "error")
+        return jsonify({"valid": False, "error": f"File not found: {cert_path}"})
+
     try:
         cert_manager = CertificateManager(cert_path, cert_password)
-        if cert_manager.load() and cert_manager.is_valid():
-            return jsonify({"valid": True})
-        return jsonify({"valid": False, "error": "Certificate invalid or expired"})
+        if not cert_manager.load():
+            add_log("Certificate load failed - wrong password?", "error")
+            return jsonify({"valid": False, "error": "Failed to load certificate. Check password."})
+
+        if not cert_manager.is_valid():
+            add_log("Certificate is expired or invalid", "error")
+            return jsonify({"valid": False, "error": "Certificate expired or invalid"})
+
+        add_log("Certificate validated successfully", "info")
+        return jsonify({"valid": True})
     except Exception as e:
+        add_log(f"Certificate validation error: {str(e)}", "error")
         return jsonify({"valid": False, "error": str(e)})
 
 
@@ -528,10 +559,18 @@ def preview_excel():
 @app.route("/api/excel/batch", methods=["POST"])
 def start_batch_processing():
     """Start batch processing from Excel file."""
+    add_log("Batch processing request received")
+
     if not EXCEL_SUPPORT:
+        add_log("Excel support not available", "error")
         return jsonify({"error": "Excel support not available. Install openpyxl."}), 400
 
+    if not DATA_READER_SUPPORT:
+        add_log("Data reader support not available", "error")
+        return jsonify({"error": "Data reader not available. Install openpyxl, python-docx."}), 400
+
     if bot_state["status"] == "running":
+        add_log("Process already running", "warning")
         return jsonify({"error": "A process is already running"}), 400
 
     data = request.json
@@ -542,8 +581,20 @@ def start_batch_processing():
     headless = data.get("headless", True)
     skip_completed = data.get("skip_completed", True)
 
-    if not excel_path or not cert_path:
-        return jsonify({"error": "Missing required parameters"}), 400
+    add_log(f"Batch params: excel={excel_path}, cert={cert_path}, country={country}")
+
+    if not excel_path:
+        return jsonify({"error": "Missing excel_path parameter"}), 400
+    if not cert_path:
+        return jsonify({"error": "Missing certificate_path parameter"}), 400
+
+    if not os.path.exists(excel_path):
+        add_log(f"Excel file not found: {excel_path}", "error")
+        return jsonify({"error": f"Excel file not found: {excel_path}"}), 400
+
+    if not os.path.exists(cert_path):
+        add_log(f"Certificate file not found: {cert_path}", "error")
+        return jsonify({"error": f"Certificate file not found: {cert_path}"}), 400
 
     # Run batch processing in background
     thread = threading.Thread(
@@ -552,6 +603,7 @@ def start_batch_processing():
     )
     thread.start()
 
+    add_log("Batch processing thread started")
     return jsonify({"message": "Batch processing started", "status": "running"})
 
 

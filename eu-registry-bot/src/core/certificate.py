@@ -88,16 +88,32 @@ class CertificateManager:
             return None
 
         now = datetime.utcnow()
-        not_valid_after = self._certificate.not_valid_after_utc.replace(tzinfo=None)
-        days_until_expiry = (not_valid_after - now).days
+
+        # Handle both old and new cryptography library versions
+        # New versions (>=37.0.0) use not_valid_after_utc, old versions use not_valid_after
+        try:
+            not_valid_before = self._certificate.not_valid_before_utc
+            not_valid_after = self._certificate.not_valid_after_utc
+        except AttributeError:
+            # Fallback for older cryptography versions
+            not_valid_before = self._certificate.not_valid_before
+            not_valid_after = self._certificate.not_valid_after
+
+        # Remove timezone info for comparison
+        if hasattr(not_valid_after, 'tzinfo') and not_valid_after.tzinfo is not None:
+            not_valid_after_naive = not_valid_after.replace(tzinfo=None)
+        else:
+            not_valid_after_naive = not_valid_after
+
+        days_until_expiry = (not_valid_after_naive - now).days
 
         return CertificateInfo(
             subject=self._certificate.subject.rfc4514_string(),
             issuer=self._certificate.issuer.rfc4514_string(),
             serial_number=self._certificate.serial_number,
-            not_valid_before=self._certificate.not_valid_before_utc,
-            not_valid_after=self._certificate.not_valid_after_utc,
-            is_valid=now < not_valid_after,
+            not_valid_before=not_valid_before,
+            not_valid_after=not_valid_after,
+            is_valid=now < not_valid_after_naive,
             days_until_expiry=days_until_expiry,
         )
 
