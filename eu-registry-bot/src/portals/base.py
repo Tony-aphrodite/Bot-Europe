@@ -204,7 +204,7 @@ class BasePortal(ABC):
                 logger.info(f"Resuming from state: {resume_state.current_step.value}")
             else:
                 self.current_state = self.state_manager.create_state(
-                    application_id=application.id or "unknown",
+                    application_id=application.application_id or "unknown",
                     country=self.country,
                     portal=self.portal_name,
                 )
