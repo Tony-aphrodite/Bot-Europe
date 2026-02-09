@@ -568,12 +568,12 @@ def run_batch_processing(
         total = len(records)
         add_log(f"Loaded {total} records from Excel")
 
-        # Initialize portal
+        # Initialize portal (disable circuit breaker for batch processing)
         config_path = f"./config/{country}.yaml"
         if country == "portugal":
-            portal = PortugalPortal(config_path, cert_manager, headless)
+            portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
         elif country == "france":
-            portal = FrancePortal(config_path, cert_manager, headless)
+            portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
         else:
             raise Exception(f"Unsupported country: {country}")
 
