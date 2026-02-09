@@ -590,14 +590,16 @@ def run_batch_processing(
         total = len(records)
         add_log(f"Loaded {total} records from data file")
 
-        # Initialize portal
+        # Initialize portal with circuit breaker DISABLED for batch processing
         config_path = f"./config/{country}.yaml"
         if country == "portugal":
-            portal = PortugalPortal(config_path, cert_manager, headless)
+            portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
         elif country == "france":
-            portal = FrancePortal(config_path, cert_manager, headless)
+            portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
         else:
             raise Exception(f"Unsupported country: {country}")
+
+        add_log("Portal initialized with circuit breaker disabled for batch mode")
 
         # Process records
         skip_statuses = ["completed", "success"] if skip_completed else []
@@ -633,7 +635,7 @@ def run_batch_processing(
                     },
                 )
 
-                # Process
+                # Process (circuit breaker disabled in batch mode)
                 result = portal.process_application(application)
 
                 if result.is_successful():

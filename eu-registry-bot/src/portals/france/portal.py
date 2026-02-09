@@ -30,8 +30,9 @@ class FrancePortal(BasePortal):
         config_path: str,
         certificate_manager: CertificateManager,
         headless: bool = True,
+        disable_circuit_breaker: bool = False,
     ):
-        super().__init__(config_path, certificate_manager, headless)
+        super().__init__(config_path, certificate_manager, headless, disable_circuit_breaker=disable_circuit_breaker)
         self._selectors = self.config.get("selectors", {})
 
     @property

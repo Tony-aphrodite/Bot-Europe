@@ -32,6 +32,7 @@ class BasePortal(ABC):
         headless: bool = True,
         state_dir: str = "./data/state",
         max_retries: int = 3,
+        disable_circuit_breaker: bool = False,
     ):
         """
         Initialize portal.
@@ -42,11 +43,13 @@ class BasePortal(ABC):
             headless: Run browser in headless mode
             state_dir: Directory for state persistence
             max_retries: Maximum retry attempts for operations
+            disable_circuit_breaker: Disable circuit breaker for batch processing
         """
         self.config = self._load_config(config_path)
         self.certificate_manager = certificate_manager
         self.headless = headless
         self.browser: Optional[BrowserManager] = None
+        self.disable_circuit_breaker = disable_circuit_breaker
 
         # State management
         self.state_manager = StateManager(state_dir)
@@ -59,10 +62,10 @@ class BasePortal(ABC):
             strategy=RetryStrategy.EXPONENTIAL,
         )
 
-        # Circuit breaker for repeated failures
+        # Circuit breaker for repeated failures (high threshold for batch)
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=300.0,  # 5 minutes
+            failure_threshold=1000 if disable_circuit_breaker else 5,
+            recovery_timeout=60.0,  # 1 minute recovery
         )
 
         # CAPTCHA handling (initialized with browser)
@@ -188,8 +191,8 @@ class BasePortal(ABC):
             portal=self.portal_name,
         )
 
-        # Check circuit breaker
-        if self.circuit_breaker.is_open:
+        # Check circuit breaker (skip if disabled for batch processing)
+        if not self.disable_circuit_breaker and self.circuit_breaker.is_open:
             result.status = SubmissionStatus.FAILED
             result.error_message = "Service temporarily unavailable (circuit breaker open)"
             return result
