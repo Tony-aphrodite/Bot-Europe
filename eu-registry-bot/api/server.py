@@ -595,18 +595,22 @@ def run_batch_processing(
 
             try:
                 # Create application from record using from_dict
+                # Provide default values for required fields
+                tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
+                location = record.province or record.extra_data.get("location") or record.name
+
                 application = Application.from_dict({
                     "country": country,
                     "applicant": {
                         "name": record.name,
-                        "tax_id": record.code or "",
+                        "tax_id": tax_id,
                         "address": record.extra_data.get("address", ""),
                         "city": record.province or "",
                         "email": record.extra_data.get("email", "info@example.com"),
                     },
                     "installation": {
                         "description": f"Installation request for {record.name}",
-                        "location": record.province or "",
+                        "location": location,
                         "start_date": datetime.now().strftime("%Y-%m-%d"),
                     },
                 })
