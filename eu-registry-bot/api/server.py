@@ -541,13 +541,19 @@ def run_batch_processing(
     headless: bool,
     skip_completed: bool
 ):
-    """Background task for batch processing."""
+    """Background task for batch processing with parallel execution."""
     global bot_state
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import multiprocessing
+
+    # Number of parallel workers (adjust based on system resources)
+    MAX_WORKERS = min(10, multiprocessing.cpu_count() * 2)
 
     try:
         bot_state["status"] = "running"
         bot_state["progress"] = 0
         add_log(f"Starting batch processing: {excel_path}")
+        add_log(f"Using {MAX_WORKERS} parallel workers for faster processing")
 
         # Load certificate
         bot_state["current_task"] = "Loading certificate..."
@@ -566,36 +572,38 @@ def run_batch_processing(
         reader.close()
 
         total = len(records)
-        add_log(f"Loaded {total} records from Excel")
+        add_log(f"Loaded {total} records from data file")
 
-        # Initialize portal (disable circuit breaker for batch processing)
-        config_path = f"./config/{country}.yaml"
-        if country == "portugal":
-            portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
-        elif country == "france":
-            portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
-        else:
-            raise Exception(f"Unsupported country: {country}")
-
-        # Process records
+        # Filter records to process
         skip_statuses = ["completed", "success"] if skip_completed else []
-        successful = 0
-        failed = 0
+        records_to_process = []
         skipped = 0
 
-        for idx, record in enumerate(records, start=1):
-            # Check if should skip
+        for record in records:
             if record.status.lower() in skip_statuses:
                 skipped += 1
-                add_log(f"Skipping {record.name} (already {record.status})")
-                continue
+            else:
+                records_to_process.append(record)
 
-            bot_state["current_task"] = f"Processing {idx}/{total}: {record.name}"
-            bot_state["progress"] = 10 + int((idx / total) * 80)
+        if skipped > 0:
+            add_log(f"Skipping {skipped} already completed records")
 
+        to_process = len(records_to_process)
+        add_log(f"Processing {to_process} records...")
+
+        # Process function for each record
+        def process_single_record(record, idx, config_path):
             try:
-                # Create application from record using from_dict
-                # Provide default values for required fields
+                # Create portal for this worker
+                worker_cert = CertificateManager(cert_path, cert_password)
+                worker_cert.load()
+
+                if country == "portugal":
+                    portal = PortugalPortal(config_path, worker_cert, headless, disable_circuit_breaker=True)
+                else:
+                    portal = FrancePortal(config_path, worker_cert, headless, disable_circuit_breaker=True)
+
+                # Create application
                 tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
                 location = record.province or record.extra_data.get("location") or record.name
 
@@ -617,20 +625,54 @@ def run_batch_processing(
 
                 # Process
                 result = portal.process_application(application)
-
-                if result.is_successful():
-                    successful += 1
-                    record.status = "completed"
-                    add_log(f"✓ {record.name}: {result.reference_number}")
-                else:
-                    failed += 1
-                    record.status = "failed"
-                    add_log(f"✗ {record.name}: {result.error_message}", "error")
+                return (record, result, None)
 
             except Exception as e:
-                failed += 1
-                record.status = "failed"
-                add_log(f"✗ {record.name}: {str(e)}", "error")
+                return (record, None, str(e))
+
+        # Initialize counters
+        successful = 0
+        failed = 0
+        processed = 0
+        config_path = f"./config/{country}.yaml"
+
+        # Parallel processing
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            # Submit all tasks
+            futures = {
+                executor.submit(process_single_record, record, idx, config_path): (idx, record)
+                for idx, record in enumerate(records_to_process, start=1)
+            }
+
+            # Process results as they complete
+            for future in as_completed(futures):
+                idx, record = futures[future]
+                processed += 1
+
+                try:
+                    record, result, error = future.result()
+
+                    if error:
+                        failed += 1
+                        record.status = "failed"
+                        add_log(f"✗ {record.name}: {error}", "error")
+                    elif result and result.is_successful():
+                        successful += 1
+                        record.status = "completed"
+                        add_log(f"✓ {record.name}: {result.reference_number}")
+                    else:
+                        failed += 1
+                        record.status = "failed"
+                        error_msg = result.error_message if result else "Unknown error"
+                        add_log(f"✗ {record.name}: {error_msg}", "error")
+
+                except Exception as e:
+                    failed += 1
+                    add_log(f"✗ Record error: {str(e)}", "error")
+
+                # Update progress
+                bot_state["current_task"] = f"Processing {processed}/{to_process} (✓{successful} ✗{failed})"
+                bot_state["progress"] = 10 + int((processed / to_process) * 80)
 
         # Final summary
         bot_state["progress"] = 100
