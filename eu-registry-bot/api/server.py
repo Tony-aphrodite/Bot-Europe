@@ -24,6 +24,9 @@ from src.models.result import SubmissionResult, SubmissionStatus
 from src.portals.portugal import PortugalPortal
 from src.portals.france import FrancePortal
 from src.utils.file_handler import FileHandler
+from src.utils import EXCEL_SUPPORT
+if EXCEL_SUPPORT:
+    from src.utils import ExcelReader, BatchProcessor, MunicipalityRecord
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -450,6 +453,203 @@ def scheduler_status():
         "active": bot_state["scheduler_active"],
         "tasks": tasks,
     })
+
+
+# =============================================================================
+# Excel Batch Processing Endpoints
+# =============================================================================
+
+@app.route("/api/excel/support", methods=["GET"])
+def check_excel_support():
+    """Check if Excel support is available."""
+    return jsonify({"supported": EXCEL_SUPPORT})
+
+
+@app.route("/api/excel/preview", methods=["POST"])
+def preview_excel():
+    """Preview an Excel file contents."""
+    if not EXCEL_SUPPORT:
+        return jsonify({"error": "Excel support not available. Install openpyxl."}), 400
+
+    data = request.json
+    file_path = data.get("path")
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({"error": "Excel file not found"}), 400
+
+    try:
+        # Custom column mappings if provided
+        custom_mappings = data.get("column_mappings", {})
+
+        reader = ExcelReader(file_path, custom_mappings=custom_mappings)
+        summary = reader.get_summary()
+        records = reader.read_all()
+        reader.close()
+
+        # Convert records to dicts for JSON
+        records_data = [r.to_dict() for r in records[:100]]  # Limit to first 100 for preview
+
+        return jsonify({
+            "summary": summary,
+            "total_records": len(records),
+            "preview_records": records_data,
+            "status_counts": {
+                "pending": sum(1 for r in records if r.status == "pending"),
+                "completed": sum(1 for r in records if r.status == "completed"),
+                "failed": sum(1 for r in records if r.status == "failed"),
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/excel/batch", methods=["POST"])
+def start_batch_processing():
+    """Start batch processing from Excel file."""
+    if not EXCEL_SUPPORT:
+        return jsonify({"error": "Excel support not available. Install openpyxl."}), 400
+
+    if bot_state["status"] == "running":
+        return jsonify({"error": "A process is already running"}), 400
+
+    data = request.json
+    excel_path = data.get("excel_path")
+    cert_path = data.get("certificate_path")
+    cert_password = data.get("certificate_password", "")
+    country = data.get("country", "portugal")
+    headless = data.get("headless", True)
+    skip_completed = data.get("skip_completed", True)
+
+    if not excel_path or not cert_path:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    # Run batch processing in background
+    thread = threading.Thread(
+        target=run_batch_processing,
+        args=(excel_path, cert_path, cert_password, country, headless, skip_completed)
+    )
+    thread.start()
+
+    return jsonify({"message": "Batch processing started", "status": "running"})
+
+
+def run_batch_processing(
+    excel_path: str,
+    cert_path: str,
+    cert_password: str,
+    country: str,
+    headless: bool,
+    skip_completed: bool
+):
+    """Background task for batch processing."""
+    global bot_state
+
+    try:
+        bot_state["status"] = "running"
+        bot_state["progress"] = 0
+        add_log(f"Starting batch processing: {excel_path}")
+
+        # Load certificate
+        bot_state["current_task"] = "Loading certificate..."
+        cert_manager = CertificateManager(cert_path, cert_password)
+        if not cert_manager.load() or not cert_manager.is_valid():
+            raise Exception("Certificate invalid or expired")
+
+        add_log("Certificate loaded and verified")
+
+        # Load Excel file
+        bot_state["current_task"] = "Loading Excel file..."
+        bot_state["progress"] = 10
+
+        reader = ExcelReader(excel_path)
+        records = reader.read_all()
+        reader.close()
+
+        total = len(records)
+        add_log(f"Loaded {total} records from Excel")
+
+        # Initialize portal
+        config_path = f"./config/{country}.yaml"
+        if country == "portugal":
+            portal = PortugalPortal(config_path, cert_manager, headless)
+        elif country == "france":
+            portal = FrancePortal(config_path, cert_manager, headless)
+        else:
+            raise Exception(f"Unsupported country: {country}")
+
+        # Process records
+        skip_statuses = ["completed", "success"] if skip_completed else []
+        successful = 0
+        failed = 0
+        skipped = 0
+
+        for idx, record in enumerate(records, start=1):
+            # Check if should skip
+            if record.status.lower() in skip_statuses:
+                skipped += 1
+                add_log(f"Skipping {record.name} (already {record.status})")
+                continue
+
+            bot_state["current_task"] = f"Processing {idx}/{total}: {record.name}"
+            bot_state["progress"] = 10 + int((idx / total) * 80)
+
+            try:
+                # Create application from record
+                application = Application(
+                    country=country,
+                    applicant={
+                        "name": record.name,
+                        "tax_id": record.code or "",
+                        "address": record.extra_data.get("address", ""),
+                        "city": record.province or "",
+                        "email": record.extra_data.get("email", "info@example.com"),
+                    },
+                    installation={
+                        "description": f"Installation request for {record.name}",
+                        "location": record.province or "",
+                        "start_date": datetime.now().strftime("%Y-%m-%d"),
+                    },
+                )
+
+                # Process
+                result = portal.process_application(application)
+
+                if result.is_successful():
+                    successful += 1
+                    record.status = "completed"
+                    add_log(f"✓ {record.name}: {result.reference_number}")
+                else:
+                    failed += 1
+                    record.status = "failed"
+                    add_log(f"✗ {record.name}: {result.error_message}", "error")
+
+            except Exception as e:
+                failed += 1
+                record.status = "failed"
+                add_log(f"✗ {record.name}: {str(e)}", "error")
+
+        # Final summary
+        bot_state["progress"] = 100
+        bot_state["status"] = "idle"
+        bot_state["current_task"] = None
+        bot_state["last_result"] = {
+            "type": "batch",
+            "total": total,
+            "successful": successful,
+            "failed": failed,
+            "skipped": skipped,
+        }
+
+        add_log(
+            f"Batch complete: {successful} successful, {failed} failed, {skipped} skipped",
+            "success" if failed == 0 else "warning"
+        )
+
+    except Exception as e:
+        bot_state["status"] = "error"
+        bot_state["current_task"] = None
+        bot_state["last_result"] = {"error": str(e)}
+        add_log(f"Batch error: {str(e)}", "error")
 
 
 # =============================================================================

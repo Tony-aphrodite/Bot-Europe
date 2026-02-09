@@ -142,7 +142,18 @@
                     <p>Submit a new application to EU government portals</p>
                 </header>
 
-                <div class="form-container">
+                <!-- Mode Toggle -->
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="mode-single" onclick="setSubmitMode('single')">
+                        <span>📝</span> Single Submission
+                    </button>
+                    <button class="mode-btn" id="mode-batch" onclick="setSubmitMode('batch')">
+                        <span>📊</span> Batch Processing (Excel/CSV/DOCX)
+                    </button>
+                </div>
+
+                <!-- Single Submission Form -->
+                <div class="form-container" id="single-form-container">
                     <form id="submit-form" class="submission-form">
                         <!-- Certificate Section -->
                         <div class="form-section">
@@ -191,6 +202,112 @@
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary btn-large">
                                 <span>🚀</span> Submit Application
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Batch Processing Form -->
+                <div class="form-container" id="batch-form-container" style="display: none;">
+                    <form id="batch-form" class="submission-form">
+                        <!-- Certificate Section -->
+                        <div class="form-section">
+                            <h3>Certificate</h3>
+                            <div class="form-group">
+                                <label for="batch-cert-path">Certificate File (.p12 / .pfx)</label>
+                                <div class="file-input-group">
+                                    <input type="text" id="batch-cert-path" readonly placeholder="Select certificate file...">
+                                    <button type="button" class="btn btn-secondary" onclick="selectBatchCertificate()">Browse</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="batch-cert-password">Certificate Password</label>
+                                <input type="password" id="batch-cert-password" placeholder="Enter password">
+                            </div>
+                            <button type="button" class="btn btn-outline" onclick="validateBatchCertificate()">Validate Certificate</button>
+                            <div id="batch-cert-info" class="cert-info" style="display: none;"></div>
+                        </div>
+
+                        <!-- Batch File Section -->
+                        <div class="form-section">
+                            <h3>Municipality Data File</h3>
+                            <p class="section-description">Upload Excel, CSV, or Word file with municipality list</p>
+                            <div class="form-group">
+                                <label for="batch-file">Data File (.xlsx / .xls / .csv / .docx)</label>
+                                <div class="file-input-group">
+                                    <input type="text" id="batch-file" readonly placeholder="Select data file...">
+                                    <button type="button" class="btn btn-secondary" onclick="selectBatchFile()">Browse</button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline" onclick="previewBatchFile()">Preview File</button>
+                            <div id="batch-preview" class="batch-preview" style="display: none;">
+                                <div class="preview-header">
+                                    <span id="batch-file-info"></span>
+                                </div>
+                                <div class="preview-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="batch-total">0</span>
+                                        <span class="stat-label">Total Records</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="batch-pending">0</span>
+                                        <span class="stat-label">Pending</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="batch-completed">0</span>
+                                        <span class="stat-label">Completed</span>
+                                    </div>
+                                </div>
+                                <div class="preview-table-container">
+                                    <table class="preview-table" id="batch-preview-table">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Municipality</th>
+                                                <th>Province</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="batch-preview-body">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Country Selection -->
+                        <div class="form-section">
+                            <h3>Target Country</h3>
+                            <div class="form-group">
+                                <label for="batch-country">Select Country Portal</label>
+                                <select id="batch-country" class="form-select">
+                                    <option value="portugal">Portugal (gov.pt)</option>
+                                    <option value="france">France (Service-Public.fr)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Options Section -->
+                        <div class="form-section">
+                            <h3>Options</h3>
+                            <div class="form-group checkbox-group">
+                                <label>
+                                    <input type="checkbox" id="batch-headless" checked>
+                                    <span>Run in headless mode (no browser window)</span>
+                                </label>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <label>
+                                    <input type="checkbox" id="batch-skip-completed" checked>
+                                    <span>Skip already completed records</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-large">
+                                <span>🚀</span> Start Batch Processing
                             </button>
                         </div>
                     </form>
