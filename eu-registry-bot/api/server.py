@@ -519,6 +519,7 @@ def start_batch_processing():
     country = data.get("country", "portugal")
     headless = data.get("headless", True)
     skip_completed = data.get("skip_completed", True)
+    test_mode = data.get("test_mode", False)  # Fast mode without browser
 
     if not excel_path or not cert_path:
         return jsonify({"error": "Missing required parameters"}), 400
@@ -526,11 +527,12 @@ def start_batch_processing():
     # Run batch processing in background
     thread = threading.Thread(
         target=run_batch_processing,
-        args=(excel_path, cert_path, cert_password, country, headless, skip_completed)
+        args=(excel_path, cert_path, cert_password, country, headless, skip_completed, test_mode)
     )
     thread.start()
 
-    return jsonify({"message": "Batch processing started", "status": "running"})
+    mode_text = "TEST MODE (no portal)" if test_mode else "LIVE MODE"
+    return jsonify({"message": f"Batch processing started ({mode_text})", "status": "running"})
 
 
 def run_batch_processing(
@@ -539,21 +541,21 @@ def run_batch_processing(
     cert_password: str,
     country: str,
     headless: bool,
-    skip_completed: bool
+    skip_completed: bool,
+    test_mode: bool = False
 ):
-    """Background task for batch processing with parallel execution."""
+    """Background task for batch processing."""
     global bot_state
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    import multiprocessing
-
-    # Number of parallel workers (adjust based on system resources)
-    MAX_WORKERS = min(10, multiprocessing.cpu_count() * 2)
 
     try:
         bot_state["status"] = "running"
         bot_state["progress"] = 0
-        add_log(f"Starting batch processing: {excel_path}")
-        add_log(f"Using {MAX_WORKERS} parallel workers for faster processing")
+
+        if test_mode:
+            add_log(f"Starting FAST TEST MODE: {excel_path}")
+            add_log("⚡ Test mode: No portal connection, data validation only")
+        else:
+            add_log(f"Starting batch processing: {excel_path}")
 
         # Load certificate
         bot_state["current_task"] = "Loading certificate..."
@@ -591,88 +593,122 @@ def run_batch_processing(
         to_process = len(records_to_process)
         add_log(f"Processing {to_process} records...")
 
-        # Process function for each record
-        def process_single_record(record, idx, config_path):
-            try:
-                # Create portal for this worker
-                worker_cert = CertificateManager(cert_path, cert_password)
-                worker_cert.load()
-
-                if country == "portugal":
-                    portal = PortugalPortal(config_path, worker_cert, headless, disable_circuit_breaker=True)
-                else:
-                    portal = FrancePortal(config_path, worker_cert, headless, disable_circuit_breaker=True)
-
-                # Create application
-                tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
-                location = record.province or record.extra_data.get("location") or record.name
-
-                application = Application.from_dict({
-                    "country": country,
-                    "applicant": {
-                        "name": record.name,
-                        "tax_id": tax_id,
-                        "address": record.extra_data.get("address", ""),
-                        "city": record.province or "",
-                        "email": record.extra_data.get("email", "info@example.com"),
-                    },
-                    "installation": {
-                        "description": f"Installation request for {record.name}",
-                        "location": location,
-                        "start_date": datetime.now().strftime("%Y-%m-%d"),
-                    },
-                })
-
-                # Process
-                result = portal.process_application(application)
-                return (record, result, None)
-
-            except Exception as e:
-                return (record, None, str(e))
-
         # Initialize counters
         successful = 0
         failed = 0
         processed = 0
-        config_path = f"./config/{country}.yaml"
 
-        # Parallel processing
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all tasks
-            futures = {
-                executor.submit(process_single_record, record, idx, config_path): (idx, record)
-                for idx, record in enumerate(records_to_process, start=1)
-            }
+        if test_mode:
+            # ⚡ FAST TEST MODE - No browser, just validate data
+            import time
+            start_time = time.time()
 
-            # Process results as they complete
-            for future in as_completed(futures):
-                idx, record = futures[future]
+            for idx, record in enumerate(records_to_process, start=1):
                 processed += 1
 
                 try:
-                    record, result, error = future.result()
+                    # Create and validate application
+                    tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
+                    location = record.province or record.extra_data.get("location") or record.name
 
-                    if error:
+                    application = Application.from_dict({
+                        "country": country,
+                        "applicant": {
+                            "name": record.name,
+                            "tax_id": tax_id,
+                            "address": record.extra_data.get("address", ""),
+                            "city": record.province or "",
+                            "email": record.extra_data.get("email", "info@example.com"),
+                        },
+                        "installation": {
+                            "description": f"Installation request for {record.name}",
+                            "location": location,
+                            "start_date": datetime.now().strftime("%Y-%m-%d"),
+                        },
+                    })
+
+                    # Validate
+                    is_valid, errors = application.validate()
+
+                    if is_valid:
+                        successful += 1
+                        record.status = "validated"
+                        # Generate mock reference number
+                        ref_num = f"TEST-{country.upper()[:2]}-{record.row_number:06d}"
+                        if processed <= 10 or processed % 500 == 0:
+                            add_log(f"✓ {record.name}: {ref_num}")
+                    else:
                         failed += 1
-                        record.status = "failed"
-                        add_log(f"✗ {record.name}: {error}", "error")
-                    elif result and result.is_successful():
+                        record.status = "invalid"
+                        if processed <= 10:
+                            add_log(f"✗ {record.name}: {'; '.join(errors)}", "error")
+
+                except Exception as e:
+                    failed += 1
+                    record.status = "error"
+                    if processed <= 10:
+                        add_log(f"✗ {record.name}: {str(e)}", "error")
+
+                # Update progress every 100 records
+                if processed % 100 == 0 or processed == to_process:
+                    bot_state["current_task"] = f"Processing {processed}/{to_process} (✓{successful} ✗{failed})"
+                    bot_state["progress"] = 10 + int((processed / to_process) * 80)
+
+            elapsed = time.time() - start_time
+            add_log(f"⚡ Test mode completed in {elapsed:.1f} seconds ({to_process/elapsed:.0f} records/sec)")
+
+        else:
+            # LIVE MODE - Sequential browser processing (1 at a time to avoid Chrome crashes)
+            config_path = f"./config/{country}.yaml"
+
+            for idx, record in enumerate(records_to_process, start=1):
+                processed += 1
+                bot_state["current_task"] = f"Processing {processed}/{to_process}: {record.name}"
+                bot_state["progress"] = 10 + int((processed / to_process) * 80)
+
+                try:
+                    # Create application
+                    tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO{record.row_number:06d}"
+                    location = record.province or record.extra_data.get("location") or record.name
+
+                    application = Application.from_dict({
+                        "country": country,
+                        "applicant": {
+                            "name": record.name,
+                            "tax_id": tax_id,
+                            "address": record.extra_data.get("address", ""),
+                            "city": record.province or "",
+                            "email": record.extra_data.get("email", "info@example.com"),
+                        },
+                        "installation": {
+                            "description": f"Installation request for {record.name}",
+                            "location": location,
+                            "start_date": datetime.now().strftime("%Y-%m-%d"),
+                        },
+                    })
+
+                    # Create portal for this record (single browser instance)
+                    if country == "portugal":
+                        portal = PortugalPortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
+                    else:
+                        portal = FrancePortal(config_path, cert_manager, headless, disable_circuit_breaker=True)
+
+                    # Process
+                    result = portal.process_application(application)
+
+                    if result.is_successful():
                         successful += 1
                         record.status = "completed"
                         add_log(f"✓ {record.name}: {result.reference_number}")
                     else:
                         failed += 1
                         record.status = "failed"
-                        error_msg = result.error_message if result else "Unknown error"
-                        add_log(f"✗ {record.name}: {error_msg}", "error")
+                        add_log(f"✗ {record.name}: {result.error_message}", "error")
 
                 except Exception as e:
                     failed += 1
-                    add_log(f"✗ Record error: {str(e)}", "error")
-
-                # Update progress
-                bot_state["current_task"] = f"Processing {processed}/{to_process} (✓{successful} ✗{failed})"
-                bot_state["progress"] = 10 + int((processed / to_process) * 80)
+                    record.status = "failed"
+                    add_log(f"✗ {record.name}: {str(e)}", "error")
 
         # Final summary
         bot_state["progress"] = 100
@@ -680,6 +716,7 @@ def run_batch_processing(
         bot_state["current_task"] = None
         bot_state["last_result"] = {
             "type": "batch",
+            "mode": "test" if test_mode else "live",
             "total": total,
             "successful": successful,
             "failed": failed,
