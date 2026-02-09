@@ -3,6 +3,9 @@ Browser management for Selenium automation
 """
 
 import os
+import json
+import subprocess
+import tempfile
 from typing import Optional
 
 from selenium import webdriver
@@ -60,23 +63,50 @@ class BrowserManager:
 
         # Language settings
         options.add_argument("--lang=en-US")
-        options.add_experimental_option(
-            "prefs",
-            {
-                "intl.accept_languages": "en-US,en,pt,fr",
-                "download.default_directory": self.download_dir,
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "safebrowsing.enabled": True,
-            },
-        )
 
-        # Certificate handling
+        prefs = {
+            "intl.accept_languages": "en-US,en,pt,fr",
+            "download.default_directory": self.download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+        }
+
+        # Certificate handling for client certificate authentication
         if self.certificate_path:
-            # Note: Chrome requires certificate to be installed in system store
-            # or use AutoSelectCertificateForUrls policy
-            options.add_argument(f"--ssl-client-certificate-file={self.certificate_path}")
-            logger.info(f"Certificate configured: {self.certificate_path}")
+            logger.info(f"Setting up client certificate: {self.certificate_path}")
+
+            # Create Chrome policy for auto-selecting client certificates
+            # This works with certificates imported into Windows Certificate Store
+            auto_select_policy = {
+                "AutoSelectCertificateForUrls": [
+                    # Portugal ePortugal / autenticacao.gov.pt
+                    '{"pattern":"https://[*.]gov.pt","filter":{"ISSUER":{"CN":""}}}',
+                    '{"pattern":"https://[*.]autenticacao.gov.pt","filter":{"ISSUER":{"CN":""}}}',
+                    '{"pattern":"https://eportugal.gov.pt","filter":{"ISSUER":{"CN":""}}}',
+                    # France Service-Public
+                    '{"pattern":"https://[*.]service-public.gouv.fr","filter":{"ISSUER":{"CN":""}}}',
+                    '{"pattern":"https://[*.]gouv.fr","filter":{"ISSUER":{"CN":""}}}',
+                    '{"pattern":"https://franceconnect.gouv.fr","filter":{"ISSUER":{"CN":""}}}',
+                ]
+            }
+
+            # Set policy via preferences
+            prefs["profile.managed_default_content_settings.client_certificates"] = 1
+
+            # Use user data dir for persistent certificate access
+            user_data_dir = os.path.join(tempfile.gettempdir(), "chrome_cert_profile")
+            os.makedirs(user_data_dir, exist_ok=True)
+            options.add_argument(f"--user-data-dir={user_data_dir}")
+
+            # Import certificate hint - log instruction for manual import
+            logger.info(
+                "NOTE: For client certificate authentication, the certificate must be "
+                "imported into Windows Certificate Store (Personal certificates). "
+                f"Certificate file: {self.certificate_path}"
+            )
+
+        options.add_experimental_option("prefs", prefs)
 
         # Disable automation detection
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -84,6 +114,52 @@ class BrowserManager:
         options.add_argument("--disable-blink-features=AutomationControlled")
 
         return options
+
+    def import_certificate_windows(self, cert_path: str, password: str) -> bool:
+        """
+        Import certificate into Windows Certificate Store (Windows only).
+
+        Args:
+            cert_path: Path to .p12/.pfx certificate file
+            password: Certificate password
+
+        Returns:
+            True if import successful
+        """
+        if os.name != 'nt':
+            logger.warning("Certificate import only supported on Windows")
+            return False
+
+        try:
+            # Use certutil to import certificate into Personal store
+            cmd = [
+                "certutil",
+                "-f",  # Force overwrite
+                "-user",  # Current user store
+                "-p", password,
+                "-importpfx", cert_path,
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                logger.info(f"Certificate imported successfully: {cert_path}")
+                return True
+            else:
+                logger.error(f"Certificate import failed: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("Certificate import timed out")
+            return False
+        except Exception as e:
+            logger.error(f"Certificate import error: {e}")
+            return False
 
     def start(self) -> webdriver.Chrome:
         """

@@ -4,6 +4,8 @@ portal:
   name: "Portugal - gov.pt"
   base_url: "https://www.gov.pt"
   auth_url: "https://www.autenticacao.gov.pt"
+  # Balcão do Empreendedor - Ocupação de espaço público
+  service_url: "https://www2.gov.pt/inicio/espaco-empresa/balcao-do-empreendedor/ocupacao-de-espaco-publico-instalacao-de-equipamento"
   language: "pt"
 
 authentication:
@@ -118,10 +120,36 @@ forms:
         description: "Other supporting documents"
 
 selectors:
-  # CSS/XPath selectors for automation
-  login_button: "#login-btn"
-  certificate_option: "#auth-certificate"
-  submit_button: "#submit-form"
-  success_message: ".success-notification"
-  error_message: ".error-notification"
-  receipt_download: "#download-receipt"
+  # CSS/XPath selectors for automation - ePortugal / Balcão do Empreendedor
+  # Updated from actual portal analysis
+
+  # Authentication (autenticacao.gov.pt)
+  auth_container: "#autenticacao-container"
+  login_select_container: ".login-select-button-container"
+  citizen_option: "a[href*='cartao-cidadao']"
+  cmd_option: "a[href*='chave-movel-digital']"
+  certificate_option: ".login-select-button-container li:first-child"
+
+  # Service form (ePortugal Balcão do Empreendedor)
+  district_dropdown: "select[id*='selectedDistrit']"
+  municipality_dropdown: "select[id*='selectedCounty']"
+  parish_dropdown: "select[id*='selectedParish']"
+  submit_button_container: "#submitButtonDiv"
+  submit_button: ".tsubmit"
+  online_service_form: "#doOnline"
+
+  # Modal dialogs
+  service_modal: ".cestoservicos-modal"
+  close_modal: ".close, .close1"
+
+  # Status messages
+  success_message: "#id-feed_submited_msg, .alert-success"
+  error_message: "#id-feed_submited_ko, .autgov-error, .alert-danger"
+  error_container: ".autgov-error-container"
+
+  # Receipt
+  receipt_download: "a[href*='recibo'], .download-receipt"
+
+  # Waits (in seconds)
+  page_load_timeout: 30
+  element_timeout: 10

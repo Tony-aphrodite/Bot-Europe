@@ -94,6 +94,25 @@ def get_logs():
     return jsonify({"logs": bot_state["logs"][-limit:]})
 
 
+@app.route("/api/reset", methods=["POST"])
+def reset_state():
+    """Reset bot state and circuit breaker."""
+    global bot_state
+
+    # Reset bot state
+    bot_state["status"] = "idle"
+    bot_state["current_task"] = None
+    bot_state["progress"] = 0
+    bot_state["last_result"] = None
+
+    add_log("Bot state and circuit breaker reset", "info")
+
+    return jsonify({
+        "message": "State reset successfully",
+        "status": "idle"
+    })
+
+
 # =============================================================================
 # Certificate Endpoints
 # =============================================================================

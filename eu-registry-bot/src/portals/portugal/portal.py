@@ -50,91 +50,159 @@ class PortugalPortal(BasePortal):
             True if authentication successful
         """
         try:
-            base_url = self.config.get("portal", {}).get("base_url", "https://www.gov.pt")
-            auth_url = self.config.get("portal", {}).get(
-                "auth_url", "https://www.autenticacao.gov.pt"
-            )
+            # Import certificate into Windows Certificate Store (Windows only)
+            if hasattr(self.browser, 'import_certificate_windows'):
+                cert_path, cert_password = self.certificate_manager.get_certificate_for_browser()
+                if cert_path:
+                    logger.info("Importing certificate into Windows store...")
+                    self.browser.import_certificate_windows(cert_path, cert_password)
 
-            logger.info(f"Navigating to authentication: {auth_url}")
-            self.browser.navigate(auth_url)
+            # Navigate to ePortugal Balcão do Empreendedor service page
+            service_url = "https://www2.gov.pt/inicio/espaco-empresa/balcao-do-empreendedor/ocupacao-de-espaco-publico-instalacao-de-equipamento"
+
+            logger.info(f"Navigating to service page: {service_url}")
+            self.browser.navigate(service_url)
 
             # Wait for page to load
             time.sleep(3)
 
+            # Check if already authenticated (session cookie may persist)
+            if self._is_authenticated():
+                logger.info("Already authenticated (session active)")
+                return True
+
+            # Look for login/authentication button on the page
+            auth_selectors = [
+                self._selectors.get("auth_container", "#autenticacao-container"),
+                self._selectors.get("login_select_container", ".login-select-button-container"),
+                "a[href*='autenticacao']",
+                ".btn-login",
+                "#loginButton",
+                "//a[contains(text(), 'Autenticar')]",
+                "//button[contains(text(), 'Entrar')]",
+                "//a[contains(text(), 'Iniciar sessão')]",
+            ]
+
+            auth_clicked = False
+            for selector in auth_selectors:
+                try:
+                    if selector.startswith("//"):
+                        element = self.browser.driver.find_element(By.XPATH, selector)
+                    else:
+                        element = self.browser.wait_for_element(
+                            (By.CSS_SELECTOR, selector),
+                            timeout=5,
+                            condition="clickable",
+                        )
+                    element.click()
+                    logger.info(f"Clicked authentication trigger: {selector}")
+                    auth_clicked = True
+                    time.sleep(2)
+                    break
+                except (TimeoutException, NoSuchElementException):
+                    continue
+
+            if not auth_clicked:
+                logger.warning("No authentication button found - checking if already on auth page")
+
+            # Wait for authentication page
+            time.sleep(3)
+
             # Look for certificate authentication option
-            try:
-                cert_option = self.browser.wait_for_element(
-                    (By.CSS_SELECTOR, self._selectors.get("certificate_option", "#auth-certificate")),
-                    timeout=10,
-                    condition="clickable",
-                )
-                cert_option.click()
-                logger.info("Selected certificate authentication")
-            except TimeoutException:
-                # Try alternative selectors
-                logger.warning("Primary certificate selector not found, trying alternatives...")
-                alternative_selectors = [
-                    "//button[contains(text(), 'Certificado')]",
-                    "//a[contains(text(), 'Certificado Digital')]",
-                    "[data-auth-method='certificate']",
-                ]
+            cert_selectors = [
+                self._selectors.get("certificate_option", ".login-select-button-container li:first-child"),
+                self._selectors.get("citizen_option", "a[href*='cartao-cidadao']"),
+                "//button[contains(text(), 'Certificado')]",
+                "//a[contains(text(), 'Certificado Digital')]",
+                "//li[contains(text(), 'Cidadão nacional')]",
+                "[data-auth-method='certificate']",
+                ".autenticacao-metodo-certificado",
+            ]
 
-                for selector in alternative_selectors:
-                    try:
-                        if selector.startswith("//"):
-                            element = self.browser.driver.find_element(By.XPATH, selector)
-                        else:
-                            element = self.browser.driver.find_element(By.CSS_SELECTOR, selector)
-                        element.click()
-                        logger.info(f"Found certificate option with: {selector}")
-                        break
-                    except NoSuchElementException:
-                        continue
-                else:
-                    logger.error("Could not find certificate authentication option")
-                    return False
+            for selector in cert_selectors:
+                try:
+                    if selector.startswith("//"):
+                        element = self.browser.driver.find_element(By.XPATH, selector)
+                    else:
+                        element = self.browser.wait_for_element(
+                            (By.CSS_SELECTOR, selector),
+                            timeout=5,
+                            condition="clickable",
+                        )
+                    element.click()
+                    logger.info(f"Selected certificate authentication: {selector}")
+                    break
+                except (TimeoutException, NoSuchElementException):
+                    continue
 
-            # Wait for certificate prompt/selection
-            # Note: Browser will handle certificate selection automatically if configured
+            # Wait for browser certificate dialog / auto-selection
+            logger.info("Waiting for certificate authentication...")
             time.sleep(5)
 
-            # Verify authentication success by checking for user session indicators
-            try:
-                # Look for logged-in indicators
-                logged_in_indicators = [
-                    ".user-menu",
-                    ".logged-in",
-                    "#user-profile",
-                    "[data-authenticated='true']",
-                ]
+            # Verify authentication
+            if self._is_authenticated():
+                logger.info("Authentication successful")
+                return True
 
-                for indicator in logged_in_indicators:
-                    try:
-                        self.browser.wait_for_element(
-                            (By.CSS_SELECTOR, indicator),
-                            timeout=5,
-                            condition="presence",
-                        )
-                        logger.info("Authentication verified - user session active")
-                        return True
-                    except TimeoutException:
-                        continue
+            # Check for error messages
+            error_selectors = [
+                self._selectors.get("error_message", ".autgov-error"),
+                self._selectors.get("error_container", ".autgov-error-container"),
+                ".alert-danger",
+                ".error-message",
+            ]
 
-                # If no indicator found, check URL for success patterns
-                current_url = self.browser.driver.current_url
-                if "area-reservada" in current_url or "logged" in current_url:
-                    logger.info("Authentication verified via URL")
-                    return True
+            for selector in error_selectors:
+                try:
+                    error_elem = self.browser.driver.find_element(By.CSS_SELECTOR, selector)
+                    if error_elem.is_displayed():
+                        logger.error(f"Authentication error: {error_elem.text}")
+                        return False
+                except NoSuchElementException:
+                    continue
 
-                logger.warning("Could not verify authentication status")
-                return True  # Proceed anyway, may still be authenticated
-
-            except Exception as e:
-                logger.error(f"Error verifying authentication: {e}")
-                return False
+            # No error found, assume authentication proceeded
+            logger.info("No errors detected, proceeding")
+            return True
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            return False
+
+    def _is_authenticated(self) -> bool:
+        """Check if user is currently authenticated."""
+        try:
+            # Check for logged-in indicators
+            logged_in_indicators = [
+                ".user-menu",
+                ".logged-in",
+                "#user-profile",
+                "[data-authenticated='true']",
+                ".area-pessoal",
+                "#minha-conta",
+            ]
+
+            for indicator in logged_in_indicators:
+                try:
+                    self.browser.wait_for_element(
+                        (By.CSS_SELECTOR, indicator),
+                        timeout=2,
+                        condition="presence",
+                    )
+                    return True
+                except TimeoutException:
+                    continue
+
+            # Check URL for success patterns
+            current_url = self.browser.driver.current_url
+            if any(pattern in current_url for pattern in [
+                "area-reservada", "logged", "minha-area", "dashboard", "servicos"
+            ]):
+                return True
+
+            return False
+
+        except Exception:
             return False
 
     def fill_form(self, application: Application) -> bool:

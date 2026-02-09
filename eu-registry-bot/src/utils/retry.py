@@ -267,6 +267,23 @@ class CircuitBreaker:
                 f"Recovery in {self.recovery_timeout}s"
             )
 
+    def reset(self) -> None:
+        """Manually reset circuit breaker to closed state."""
+        self._failures = 0
+        self._last_failure_time = None
+        self._state = "closed"
+        logger.info("Circuit breaker: manually reset to closed state")
+
+    def get_status(self) -> dict:
+        """Get current circuit breaker status."""
+        return {
+            "state": self._state,
+            "failures": self._failures,
+            "threshold": self.failure_threshold,
+            "last_failure": self._last_failure_time,
+            "recovery_timeout": self.recovery_timeout,
+        }
+
     def execute(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute function through circuit breaker.

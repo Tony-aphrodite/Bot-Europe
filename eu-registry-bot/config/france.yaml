@@ -151,12 +151,46 @@ forms:
         description: "Additional supporting documents"
 
 selectors:
-  # CSS/XPath selectors for automation
-  login_button: "#se-connecter"
-  certificate_option: ".auth-certificate"
-  location_input: "#commune-input"
-  location_autocomplete: ".autocomplete-results"
-  submit_button: "#envoyer"
-  success_message: ".fr-alert--success"
-  error_message: ".fr-alert--error"
-  receipt_download: ".telecharger-recepisse"
+  # CSS/XPath selectors for automation - Service-Public.fr / Entreprendre
+  # Updated from actual portal analysis
+
+  # Authentication (FranceConnect)
+  login_button: "#switch-profil-btn, .fr-btn--login"
+  franceconnect_button: ".fr-connect, #franceconnect-button"
+  profile_modal: "#fr-modal-switch-profil-1"
+  confirm_switch: "#groupBtn-confirm-switch-profil-1"
+  close_modal: "#groupBtn-close-modal-switch-profil-1, .fr-modal__close"
+
+  # Language
+  language_selector: "#langue"
+  language_french: "#language-fr"
+
+  # Cerfa form (14023)
+  cerfa_form_link: "a[href*='cerfa_14023.do']"
+  form_container: ".fr-container"
+
+  # Form inputs
+  location_input: "input[name*='commune'], #commune-input"
+  location_autocomplete: ".autocomplete-results, .fr-menu__list"
+
+  # Navigation
+  tabs_container: ".fr-tabs"
+  tab_buttons: ".fr-tabs__list button"
+  tab_panels: ".fr-tabs__panel"
+
+  # Actions
+  submit_button: "button[type='submit'], .fr-btn--submit, #envoyer"
+  download_form: "a[href*='formulaires.service-public.gouv.fr']"
+
+  # Status messages (DSFR - Design System FR)
+  success_message: ".fr-alert--success, .fr-message--success"
+  error_message: ".fr-alert--error, .fr-message--error"
+  warning_message: ".fr-alert--warning"
+  info_message: ".fr-alert--info"
+
+  # Receipt
+  receipt_download: ".telecharger-recepisse, a[href*='recepisse']"
+
+  # Waits (in seconds)
+  page_load_timeout: 30
+  element_timeout: 10
