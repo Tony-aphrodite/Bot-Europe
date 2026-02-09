@@ -677,6 +677,7 @@ def run_batch_processing(
             add_log(f"Failed to start browser: {str(e)}", "error")
             raise Exception(f"Browser failed to start: {str(e)}. Make sure Chrome is installed.")
 
+        try:
             # Import certificate to Windows store (once)
             if hasattr(browser, 'import_certificate_windows'):
                 browser.import_certificate_windows(cert_path, cert_password)
