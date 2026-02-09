@@ -619,19 +619,24 @@ def run_batch_processing(
 
             try:
                 # Create application from record using from_dict
+                # Provide defaults for required fields to pass validation
+                tax_id = record.code or record.extra_data.get("tax_id") or f"AUTO-{idx:06d}"
+                location = record.province or record.extra_data.get("location") or record.name
+                email = record.extra_data.get("email") or "solicitud@bionatur.es"
+
                 application = Application.from_dict({
                     "country": country,
-                    "application_id": f"{record.code or idx}_{record.name[:20]}",
+                    "application_id": f"{tax_id}_{record.name[:20]}",
                     "applicant": {
                         "name": record.name,
-                        "tax_id": record.code or "",
+                        "tax_id": tax_id,
                         "address": record.extra_data.get("address", ""),
-                        "city": record.province or "",
-                        "email": record.extra_data.get("email", "info@example.com"),
+                        "city": record.province or record.name,
+                        "email": email,
                     },
                     "installation": {
-                        "description": f"Installation request for {record.name}",
-                        "location": record.province or "",
+                        "description": f"Solicitud instalación en vía pública - {record.name}",
+                        "location": location,
                         "start_date": datetime.now().strftime("%Y-%m-%d"),
                     },
                 })
