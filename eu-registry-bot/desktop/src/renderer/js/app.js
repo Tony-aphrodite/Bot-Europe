@@ -2,11 +2,14 @@
  * EU Registry Bot - Desktop Application JavaScript
  */
 
+console.log('=== APP.JS LOADED ===');
+
 // API Base URL
 let API_URL = 'http://localhost:5000';
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('=== DOMContentLoaded ===');
     // Get API URL from Electron
     if (window.electronAPI) {
         API_URL = await window.electronAPI.getApiUrl();
@@ -347,8 +350,14 @@ async function selectApplication() {
 }
 
 async function validateCertificate() {
+    console.log('=== validateCertificate CALLED ===');
+    alert('validateCertificate clicked!');
+
     const path = document.getElementById('cert-path').value;
     const password = document.getElementById('cert-password').value;
+
+    console.log('cert-path:', path);
+    console.log('cert-password:', password ? '[hidden]' : '[empty]');
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
@@ -356,7 +365,9 @@ async function validateCertificate() {
     }
 
     try {
+        console.log('Calling API...');
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
+        console.log('API response:', data);
         const infoDiv = document.getElementById('cert-info');
         infoDiv.style.display = 'block';
 
