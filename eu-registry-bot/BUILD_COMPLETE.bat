@@ -68,9 +68,14 @@ if %errorlevel% neq 0 (
 )
 echo       API Server OK
 
-:: Build Electron app
+:: Clean Electron cache and build
 echo [5/5] Construyendo Electron App...
 cd desktop
+
+:: Clean old builds
+if exist build rmdir /S /Q build
+if exist node_modules\.cache rmdir /S /Q node_modules\.cache
+
 call npm install > nul 2>&1
 call npm run build:win
 

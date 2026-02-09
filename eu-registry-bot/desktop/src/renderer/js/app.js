@@ -105,8 +105,8 @@ async function apiCall(endpoint, method = 'GET', data = null) {
         console.error('API Error:', error);
 
         // Check if it's a network error (API not running)
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-            throw new Error('Cannot connect to API server. Make sure the server is running.');
+        if (error.message && (error.message.includes('fetch') || error.message.includes('Failed') || error.message.includes('Network'))) {
+            throw new Error('API server not connected');
         }
 
         throw error;
@@ -114,11 +114,14 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 }
 
 let apiConnected = false;
+let apiCheckCount = 0;
 
 async function checkApiStatus() {
     const statusIndicator = document.getElementById('api-status');
     const dot = statusIndicator.querySelector('.status-dot');
     const text = statusIndicator.querySelector('.status-text');
+
+    apiCheckCount++;
 
     try {
         await apiCall('/api/health');
@@ -126,7 +129,6 @@ async function checkApiStatus() {
         dot.classList.remove('error');
         text.textContent = 'Connected';
 
-        // Only show toast on reconnection
         if (!apiConnected) {
             apiConnected = true;
             showToast('API server connected', 'success');
@@ -136,10 +138,10 @@ async function checkApiStatus() {
         dot.classList.add('error');
         text.textContent = 'Disconnected';
 
-        // Show warning toast on disconnection
-        if (apiConnected) {
+        // Show warning on first check or on disconnection
+        if (apiConnected || apiCheckCount === 1) {
             apiConnected = false;
-            showToast('API server disconnected! Buttons will not work.', 'error');
+            showToast('API server not running! Please wait...', 'error');
         }
     }
 }

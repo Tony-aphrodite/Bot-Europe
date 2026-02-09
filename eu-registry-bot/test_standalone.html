@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Certificate Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a2e; color: white; }
+        input, button { padding: 10px; margin: 5px; }
+        input { width: 300px; }
+        button { background: #4a90d9; color: white; border: none; cursor: pointer; }
+        #result { margin-top: 20px; padding: 15px; background: #2a2a4e; border-radius: 5px; }
+        .error { color: #ff6b6b; }
+        .success { color: #51cf66; }
+    </style>
+</head>
+<body>
+    <h2>EU Registry Bot - Certificate Test</h2>
+    
+    <p>API Status: <span id="api-status">Checking...</span></p>
+    
+    <div>
+        <label>Certificate Path:</label><br>
+        <input type="text" id="cert-path" value="./certificates/bionatur.p12" placeholder="Path to .p12 file">
+    </div>
+    
+    <div>
+        <label>Password:</label><br>
+        <input type="password" id="cert-password" value="B09970666" placeholder="Certificate password">
+    </div>
+    
+    <button onclick="testCertificate()">Test Certificate</button>
+    <button onclick="checkAPI()">Check API</button>
+    
+    <div id="result"></div>
+    
+    <script>
+        const API_URL = 'http://localhost:5000';
+        
+        async function checkAPI() {
+            const result = document.getElementById('result');
+            const status = document.getElementById('api-status');
+            
+            try {
+                const resp = await fetch(API_URL + '/api/health');
+                const data = await resp.json();
+                status.innerHTML = '<span class="success">Connected</span>';
+                result.innerHTML = '<p class="success">API is working!</p><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (e) {
+                status.innerHTML = '<span class="error">Disconnected</span>';
+                result.innerHTML = '<p class="error">API Error: ' + e.message + '</p><p>Make sure to run: python api/server.py</p>';
+            }
+        }
+        
+        async function testCertificate() {
+            const path = document.getElementById('cert-path').value;
+            const password = document.getElementById('cert-password').value;
+            const result = document.getElementById('result');
+            
+            result.innerHTML = '<p>Testing certificate...</p>';
+            
+            try {
+                const resp = await fetch(API_URL + '/api/certificate/info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, password })
+                });
+                
+                const data = await resp.json();
+                
+                if (data.error) {
+                    result.innerHTML = '<p class="error">Error: ' + data.error + '</p>';
+                } else {
+                    result.innerHTML = `
+                        <p class="success">Certificate Valid!</p>
+                        <p><strong>Subject:</strong> ${data.subject}</p>
+                        <p><strong>Valid Until:</strong> ${data.valid_until}</p>
+                        <p><strong>Days Until Expiry:</strong> ${data.days_until_expiry}</p>
+                        <p><strong>Is Valid:</strong> ${data.is_valid ? 'Yes' : 'No'}</p>
+                    `;
+                }
+            } catch (e) {
+                result.innerHTML = '<p class="error">Error: ' + e.message + '</p><p>Make sure API server is running!</p>';
+            }
+        }
+        
+        // Check API on load
+        checkAPI();
+    </script>
+</body>
+</html>
