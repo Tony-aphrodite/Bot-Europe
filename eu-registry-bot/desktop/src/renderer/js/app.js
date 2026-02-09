@@ -76,73 +76,33 @@ function navigateTo(pageName) {
 // =============================================================================
 
 async function apiCall(endpoint, method = 'GET', data = null) {
-    try {
-        const options = {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        };
+    const options = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+    };
 
-        if (data) {
-            options.body = JSON.stringify(data);
-        }
-
-        console.log(`API Call: ${method} ${API_URL}${endpoint}`);
-
-        const response = await fetch(`${API_URL}${endpoint}`, options);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`API HTTP Error: ${response.status} - ${errorText}`);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log('API Response:', result);
-        return result;
-    } catch (error) {
-        console.error('API Error:', error);
-
-        // Check if it's a network error (API not running)
-        if (error.message && (error.message.includes('fetch') || error.message.includes('Failed') || error.message.includes('Network'))) {
-            throw new Error('API server not connected');
-        }
-
-        throw error;
+    if (data) {
+        options.body = JSON.stringify(data);
     }
-}
 
-let apiConnected = false;
-let apiCheckCount = 0;
+    const response = await fetch(`${API_URL}${endpoint}`, options);
+    return await response.json();
+}
 
 async function checkApiStatus() {
     const statusIndicator = document.getElementById('api-status');
     const dot = statusIndicator.querySelector('.status-dot');
     const text = statusIndicator.querySelector('.status-text');
 
-    apiCheckCount++;
-
     try {
         await apiCall('/api/health');
         dot.classList.add('connected');
         dot.classList.remove('error');
         text.textContent = 'Connected';
-
-        if (!apiConnected) {
-            apiConnected = true;
-            showToast('API server connected', 'success');
-        }
     } catch (error) {
         dot.classList.remove('connected');
         dot.classList.add('error');
         text.textContent = 'Disconnected';
-
-        // Show warning on first check or on disconnection
-        if (apiConnected || apiCheckCount === 1) {
-            apiConnected = false;
-            showToast('API server not running! Please wait...', 'error');
-        }
     }
 }
 
@@ -386,58 +346,45 @@ async function selectApplication() {
 }
 
 async function validateCertificate() {
-    console.log('validateCertificate called');
-
-    const pathEl = document.getElementById('cert-path');
-    const passwordEl = document.getElementById('cert-password');
-
-    if (!pathEl) {
-        console.error('cert-path element not found');
-        showToast('Form element not found', 'error');
-        return;
-    }
-
-    const path = pathEl.value;
-    const password = passwordEl ? passwordEl.value : '';
-
-    console.log('Certificate path:', path);
+    const path = document.getElementById('cert-path').value;
+    const password = document.getElementById('cert-password').value;
+    const infoDiv = document.getElementById('cert-info');
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
         return;
     }
 
-    showToast('Validating certificate...', 'info');
-
     try {
-        console.log('Calling API:', API_URL + '/api/certificate/info');
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
-        console.log('API response:', data);
-
-        const infoDiv = document.getElementById('cert-info');
-        if (!infoDiv) {
-            console.error('cert-info element not found');
-            return;
-        }
         infoDiv.style.display = 'block';
 
         if (data.error) {
             infoDiv.className = 'cert-info invalid';
-            infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
-            showToast(data.error, 'error');
-        } else {
-            infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
             infoDiv.innerHTML = `
-                <p><strong>Subject:</strong> ${data.subject}</p>
-                <p><strong>Valid Until:</strong> ${new Date(data.valid_until).toLocaleDateString()}</p>
-                <p><strong>Days Until Expiry:</strong> ${data.days_until_expiry}</p>
-                <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
+                <p><strong>❌ Validation Failed</strong></p>
+                <p>${data.error}</p>
             `;
-            showToast('Certificate validated successfully', 'success');
+        } else if (data.is_valid) {
+            infoDiv.className = 'cert-info valid';
+            infoDiv.innerHTML = `
+                <p><strong>✅ Certificate Valid</strong></p>
+                <p>Subject: ${data.subject}</p>
+                <p>Valid Until: ${new Date(data.valid_until).toLocaleDateString()}</p>
+                <p>Days Until Expiry: ${data.days_until_expiry}</p>
+            `;
+        } else {
+            infoDiv.className = 'cert-info invalid';
+            infoDiv.innerHTML = `
+                <p><strong>❌ Certificate Expired</strong></p>
+                <p>Subject: ${data.subject}</p>
+                <p>Expired: ${new Date(data.valid_until).toLocaleDateString()}</p>
+            `;
         }
     } catch (error) {
-        console.error('Certificate validation error:', error);
-        showToast('Failed to validate certificate: ' + error.message, 'error');
+        infoDiv.style.display = 'block';
+        infoDiv.className = 'cert-info invalid';
+        infoDiv.innerHTML = `<p><strong>❌ Connection Failed</strong></p><p>API server not running</p>`;
     }
 }
 
@@ -657,57 +604,45 @@ async function selectBatchCertificate() {
 }
 
 async function validateBatchCertificate() {
-    console.log('validateBatchCertificate called');
-
-    const pathEl = document.getElementById('batch-cert-path');
-    const passwordEl = document.getElementById('batch-cert-password');
-
-    if (!pathEl) {
-        console.error('batch-cert-path element not found');
-        showToast('Form element not found', 'error');
-        return;
-    }
-
-    const path = pathEl.value;
-    const password = passwordEl ? passwordEl.value : '';
-
-    console.log('Certificate path:', path);
+    const path = document.getElementById('batch-cert-path').value;
+    const password = document.getElementById('batch-cert-password').value;
+    const infoDiv = document.getElementById('batch-cert-info');
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
         return;
     }
 
-    showToast('Validating certificate...', 'info');
-
     try {
-        console.log('Calling API:', API_URL + '/api/certificate/info');
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
-        console.log('API response:', data);
-
-        const infoDiv = document.getElementById('batch-cert-info');
-        if (!infoDiv) {
-            console.error('batch-cert-info element not found');
-            return;
-        }
         infoDiv.style.display = 'block';
 
         if (data.error) {
             infoDiv.className = 'cert-info invalid';
-            infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
-            showToast(data.error, 'error');
-        } else {
-            infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
             infoDiv.innerHTML = `
-                <p><strong>Subject:</strong> ${data.subject}</p>
-                <p><strong>Valid Until:</strong> ${new Date(data.valid_until).toLocaleDateString()}</p>
-                <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
+                <p><strong>❌ Validation Failed</strong></p>
+                <p>${data.error}</p>
             `;
-            showToast('Certificate validated successfully', 'success');
+        } else if (data.is_valid) {
+            infoDiv.className = 'cert-info valid';
+            infoDiv.innerHTML = `
+                <p><strong>✅ Certificate Valid</strong></p>
+                <p>Subject: ${data.subject}</p>
+                <p>Valid Until: ${new Date(data.valid_until).toLocaleDateString()}</p>
+                <p>Days Until Expiry: ${data.days_until_expiry}</p>
+            `;
+        } else {
+            infoDiv.className = 'cert-info invalid';
+            infoDiv.innerHTML = `
+                <p><strong>❌ Certificate Expired</strong></p>
+                <p>Subject: ${data.subject}</p>
+                <p>Expired: ${new Date(data.valid_until).toLocaleDateString()}</p>
+            `;
         }
     } catch (error) {
-        console.error('Certificate validation error:', error);
-        showToast('Failed to validate certificate: ' + error.message, 'error');
+        infoDiv.style.display = 'block';
+        infoDiv.className = 'cert-info invalid';
+        infoDiv.innerHTML = `<p><strong>❌ Connection Failed</strong></p><p>API server not running</p>`;
     }
 }
 
