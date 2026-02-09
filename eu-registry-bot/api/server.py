@@ -661,14 +661,21 @@ def run_batch_processing(
         bot_state["current_task"] = "Starting browser..."
         add_log("Creating browser session (single instance for all records)")
 
-        browser = BrowserManager(
-            headless=headless,
-            certificate_path=cert_path,
-        )
+        try:
+            browser = BrowserManager(
+                headless=headless,
+                certificate_path=cert_path,
+            )
+        except Exception as e:
+            add_log(f"Failed to create BrowserManager: {str(e)}", "error")
+            raise Exception(f"Browser initialization failed: {str(e)}")
 
         try:
             browser.start()
             add_log("Browser started successfully")
+        except Exception as e:
+            add_log(f"Failed to start browser: {str(e)}", "error")
+            raise Exception(f"Browser failed to start: {str(e)}. Make sure Chrome is installed.")
 
             # Import certificate to Windows store (once)
             if hasattr(browser, 'import_certificate_windows'):

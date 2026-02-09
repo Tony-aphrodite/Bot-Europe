@@ -88,13 +88,32 @@ async function apiCall(endpoint, method = 'GET', data = null) {
             options.body = JSON.stringify(data);
         }
 
+        console.log(`API Call: ${method} ${API_URL}${endpoint}`);
+
         const response = await fetch(`${API_URL}${endpoint}`, options);
-        return await response.json();
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`API HTTP Error: ${response.status} - ${errorText}`);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('API Response:', result);
+        return result;
     } catch (error) {
         console.error('API Error:', error);
+
+        // Check if it's a network error (API not running)
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            throw new Error('Cannot connect to API server. Make sure the server is running.');
+        }
+
         throw error;
     }
 }
+
+let apiConnected = false;
 
 async function checkApiStatus() {
     const statusIndicator = document.getElementById('api-status');
@@ -106,10 +125,22 @@ async function checkApiStatus() {
         dot.classList.add('connected');
         dot.classList.remove('error');
         text.textContent = 'Connected';
+
+        // Only show toast on reconnection
+        if (!apiConnected) {
+            apiConnected = true;
+            showToast('API server connected', 'success');
+        }
     } catch (error) {
         dot.classList.remove('connected');
         dot.classList.add('error');
         text.textContent = 'Disconnected';
+
+        // Show warning toast on disconnection
+        if (apiConnected) {
+            apiConnected = false;
+            showToast('API server disconnected! Buttons will not work.', 'error');
+        }
     }
 }
 
@@ -332,6 +363,12 @@ async function selectCertificate() {
         if (path) {
             document.getElementById('cert-path').value = path;
         }
+    } else {
+        // Fallback: prompt for manual input
+        const path = prompt('Enter certificate path (e.g., ./certificates/bionatur.p12):');
+        if (path) {
+            document.getElementById('cert-path').value = path;
+        }
     }
 }
 
@@ -347,22 +384,45 @@ async function selectApplication() {
 }
 
 async function validateCertificate() {
-    const path = document.getElementById('cert-path').value;
-    const password = document.getElementById('cert-password').value;
+    console.log('validateCertificate called');
+
+    const pathEl = document.getElementById('cert-path');
+    const passwordEl = document.getElementById('cert-password');
+
+    if (!pathEl) {
+        console.error('cert-path element not found');
+        showToast('Form element not found', 'error');
+        return;
+    }
+
+    const path = pathEl.value;
+    const password = passwordEl ? passwordEl.value : '';
+
+    console.log('Certificate path:', path);
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
         return;
     }
 
+    showToast('Validating certificate...', 'info');
+
     try {
+        console.log('Calling API:', API_URL + '/api/certificate/info');
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
+        console.log('API response:', data);
+
         const infoDiv = document.getElementById('cert-info');
+        if (!infoDiv) {
+            console.error('cert-info element not found');
+            return;
+        }
         infoDiv.style.display = 'block';
 
         if (data.error) {
             infoDiv.className = 'cert-info invalid';
             infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
+            showToast(data.error, 'error');
         } else {
             infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
             infoDiv.innerHTML = `
@@ -371,9 +431,11 @@ async function validateCertificate() {
                 <p><strong>Days Until Expiry:</strong> ${data.days_until_expiry}</p>
                 <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
             `;
+            showToast('Certificate validated successfully', 'success');
         }
     } catch (error) {
-        showToast('Failed to validate certificate', 'error');
+        console.error('Certificate validation error:', error);
+        showToast('Failed to validate certificate: ' + error.message, 'error');
     }
 }
 
@@ -583,26 +645,55 @@ async function selectBatchCertificate() {
         if (path) {
             document.getElementById('batch-cert-path').value = path;
         }
+    } else {
+        // Fallback: prompt for manual input
+        const path = prompt('Enter certificate path (e.g., ./certificates/bionatur.p12):');
+        if (path) {
+            document.getElementById('batch-cert-path').value = path;
+        }
     }
 }
 
 async function validateBatchCertificate() {
-    const path = document.getElementById('batch-cert-path').value;
-    const password = document.getElementById('batch-cert-password').value;
+    console.log('validateBatchCertificate called');
+
+    const pathEl = document.getElementById('batch-cert-path');
+    const passwordEl = document.getElementById('batch-cert-password');
+
+    if (!pathEl) {
+        console.error('batch-cert-path element not found');
+        showToast('Form element not found', 'error');
+        return;
+    }
+
+    const path = pathEl.value;
+    const password = passwordEl ? passwordEl.value : '';
+
+    console.log('Certificate path:', path);
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
         return;
     }
 
+    showToast('Validating certificate...', 'info');
+
     try {
+        console.log('Calling API:', API_URL + '/api/certificate/info');
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
+        console.log('API response:', data);
+
         const infoDiv = document.getElementById('batch-cert-info');
+        if (!infoDiv) {
+            console.error('batch-cert-info element not found');
+            return;
+        }
         infoDiv.style.display = 'block';
 
         if (data.error) {
             infoDiv.className = 'cert-info invalid';
             infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
+            showToast(data.error, 'error');
         } else {
             infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
             infoDiv.innerHTML = `
@@ -610,9 +701,11 @@ async function validateBatchCertificate() {
                 <p><strong>Valid Until:</strong> ${new Date(data.valid_until).toLocaleDateString()}</p>
                 <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
             `;
+            showToast('Certificate validated successfully', 'success');
         }
     } catch (error) {
-        showToast('Failed to validate certificate', 'error');
+        console.error('Certificate validation error:', error);
+        showToast('Failed to validate certificate: ' + error.message, 'error');
     }
 }
 
@@ -621,6 +714,12 @@ async function selectBatchFile() {
         const path = await window.electronAPI.selectFile({
             filters: [{ name: 'Data Files', extensions: ['xlsx', 'xls', 'csv', 'docx'] }]
         });
+        if (path) {
+            document.getElementById('batch-file').value = path;
+        }
+    } else {
+        // Fallback: prompt for manual input
+        const path = prompt('Enter data file path (e.g., ./data/input/municipalities.xlsx):');
         if (path) {
             document.getElementById('batch-file').value = path;
         }
@@ -709,19 +808,40 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function handleBatchSubmission() {
-    const certPath = document.getElementById('batch-cert-path').value;
-    const certPassword = document.getElementById('batch-cert-password').value;
-    const batchFile = document.getElementById('batch-file').value;
-    const country = document.getElementById('batch-country').value;
-    const headless = document.getElementById('batch-headless').checked;
-    const skipCompleted = document.getElementById('batch-skip-completed').checked;
+    console.log('handleBatchSubmission called');
+
+    const certPathEl = document.getElementById('batch-cert-path');
+    const certPasswordEl = document.getElementById('batch-cert-password');
+    const batchFileEl = document.getElementById('batch-file');
+    const countryEl = document.getElementById('batch-country');
+    const headlessEl = document.getElementById('batch-headless');
+    const skipCompletedEl = document.getElementById('batch-skip-completed');
+
+    // Check elements exist
+    if (!certPathEl || !batchFileEl) {
+        console.error('Form elements not found');
+        showToast('Form elements not found', 'error');
+        return;
+    }
+
+    const certPath = certPathEl.value;
+    const certPassword = certPasswordEl ? certPasswordEl.value : '';
+    const batchFile = batchFileEl.value;
+    const country = countryEl ? countryEl.value : 'portugal';
+    const headless = headlessEl ? headlessEl.checked : true;
+    const skipCompleted = skipCompletedEl ? skipCompletedEl.checked : true;
+
+    console.log('Batch params:', { certPath, batchFile, country, headless, skipCompleted });
 
     if (!certPath || !batchFile) {
         showToast('Please select both certificate and data file', 'warning');
         return;
     }
 
+    showToast('Starting batch processing...', 'info');
+
     try {
+        console.log('Calling API:', API_URL + '/api/excel/batch');
         const data = await apiCall('/api/excel/batch', 'POST', {
             excel_path: batchFile,
             certificate_path: certPath,
@@ -731,6 +851,8 @@ async function handleBatchSubmission() {
             skip_completed: skipCompleted,
         });
 
+        console.log('API response:', data);
+
         if (data.error) {
             showToast(data.error, 'error');
         } else {
@@ -738,6 +860,52 @@ async function handleBatchSubmission() {
             navigateTo('dashboard');
         }
     } catch (error) {
-        showToast('Failed to start batch processing', 'error');
+        console.error('Batch submission error:', error);
+        showToast('Failed to start batch processing: ' + error.message, 'error');
     }
 }
+
+// =============================================================================
+// Diagnostic Functions (for troubleshooting)
+// =============================================================================
+
+async function runDiagnostics() {
+    console.log('=== EU Registry Bot Diagnostics ===');
+    console.log('API_URL:', API_URL);
+    console.log('electronAPI available:', !!window.electronAPI);
+
+    // Test API connection
+    console.log('\n1. Testing API connection...');
+    try {
+        const health = await fetch(`${API_URL}/api/health`);
+        const data = await health.json();
+        console.log('   API Health:', data);
+    } catch (e) {
+        console.error('   API Error:', e.message);
+        console.log('   -> API server may not be running!');
+    }
+
+    // Check form elements
+    console.log('\n2. Checking form elements...');
+    const elements = [
+        'cert-path', 'cert-password', 'cert-info',
+        'batch-cert-path', 'batch-cert-password', 'batch-cert-info',
+        'batch-file', 'batch-country', 'batch-form'
+    ];
+    elements.forEach(id => {
+        const el = document.getElementById(id);
+        console.log(`   ${id}: ${el ? 'OK' : 'NOT FOUND'}`);
+    });
+
+    // Check functions
+    console.log('\n3. Checking functions...');
+    console.log('   validateCertificate:', typeof validateCertificate);
+    console.log('   validateBatchCertificate:', typeof validateBatchCertificate);
+    console.log('   handleBatchSubmission:', typeof handleBatchSubmission);
+
+    console.log('\n=== End Diagnostics ===');
+    showToast('Diagnostics complete - check browser console (F12)', 'info');
+}
+
+// Make diagnostic function available globally
+window.runDiagnostics = runDiagnostics;
