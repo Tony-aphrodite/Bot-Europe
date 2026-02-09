@@ -76,17 +76,24 @@ function navigateTo(pageName) {
 // =============================================================================
 
 async function apiCall(endpoint, method = 'GET', data = null) {
-    const options = {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-    };
+    try {
+        const options = {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        };
 
-    if (data) {
-        options.body = JSON.stringify(data);
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+
+        const response = await fetch(`${API_URL}${endpoint}`, options);
+        return await response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
     }
-
-    const response = await fetch(`${API_URL}${endpoint}`, options);
-    return await response.json();
 }
 
 async function checkApiStatus() {
@@ -325,12 +332,6 @@ async function selectCertificate() {
         if (path) {
             document.getElementById('cert-path').value = path;
         }
-    } else {
-        // Fallback: prompt for manual input
-        const path = prompt('Enter certificate path (e.g., ./certificates/bionatur.p12):');
-        if (path) {
-            document.getElementById('cert-path').value = path;
-        }
     }
 }
 
@@ -348,7 +349,6 @@ async function selectApplication() {
 async function validateCertificate() {
     const path = document.getElementById('cert-path').value;
     const password = document.getElementById('cert-password').value;
-    const infoDiv = document.getElementById('cert-info');
 
     if (!path) {
         showToast('Please select a certificate file', 'warning');
@@ -357,34 +357,23 @@ async function validateCertificate() {
 
     try {
         const data = await apiCall('/api/certificate/info', 'POST', { path, password });
+        const infoDiv = document.getElementById('cert-info');
         infoDiv.style.display = 'block';
 
         if (data.error) {
             infoDiv.className = 'cert-info invalid';
-            infoDiv.innerHTML = `
-                <p><strong>❌ Validation Failed</strong></p>
-                <p>${data.error}</p>
-            `;
-        } else if (data.is_valid) {
-            infoDiv.className = 'cert-info valid';
-            infoDiv.innerHTML = `
-                <p><strong>✅ Certificate Valid</strong></p>
-                <p>Subject: ${data.subject}</p>
-                <p>Valid Until: ${new Date(data.valid_until).toLocaleDateString()}</p>
-                <p>Days Until Expiry: ${data.days_until_expiry}</p>
-            `;
+            infoDiv.innerHTML = `<p>❌ ${data.error}</p>`;
         } else {
-            infoDiv.className = 'cert-info invalid';
+            infoDiv.className = `cert-info ${data.is_valid ? 'valid' : 'invalid'}`;
             infoDiv.innerHTML = `
-                <p><strong>❌ Certificate Expired</strong></p>
-                <p>Subject: ${data.subject}</p>
-                <p>Expired: ${new Date(data.valid_until).toLocaleDateString()}</p>
+                <p><strong>Subject:</strong> ${data.subject}</p>
+                <p><strong>Valid Until:</strong> ${new Date(data.valid_until).toLocaleDateString()}</p>
+                <p><strong>Days Until Expiry:</strong> ${data.days_until_expiry}</p>
+                <p><strong>Status:</strong> ${data.is_valid ? '✅ Valid' : '❌ Expired'}</p>
             `;
         }
     } catch (error) {
-        infoDiv.style.display = 'block';
-        infoDiv.className = 'cert-info invalid';
-        infoDiv.innerHTML = `<p><strong>❌ Connection Failed</strong></p><p>API server not running</p>`;
+        showToast('Failed to validate certificate', 'error');
     }
 }
 
@@ -567,282 +556,3 @@ document.getElementById('modal-overlay').addEventListener('click', (e) => {
         closeModal();
     }
 });
-
-// =============================================================================
-// Batch Processing
-// =============================================================================
-
-let currentSubmitMode = 'single';
-
-function setSubmitMode(mode) {
-    currentSubmitMode = mode;
-
-    // Update toggle buttons
-    document.getElementById('mode-single').classList.toggle('active', mode === 'single');
-    document.getElementById('mode-batch').classList.toggle('active', mode === 'batch');
-
-    // Show/hide forms
-    document.getElementById('single-form-container').style.display = mode === 'single' ? 'block' : 'none';
-    document.getElementById('batch-form-container').style.display = mode === 'batch' ? 'block' : 'none';
-}
-
-async function selectBatchCertificate() {
-    if (window.electronAPI) {
-        const path = await window.electronAPI.selectFile({
-            filters: [{ name: 'Certificates', extensions: ['p12', 'pfx'] }]
-        });
-        if (path) {
-            document.getElementById('batch-cert-path').value = path;
-        }
-    } else {
-        // Fallback: prompt for manual input
-        const path = prompt('Enter certificate path (e.g., ./certificates/bionatur.p12):');
-        if (path) {
-            document.getElementById('batch-cert-path').value = path;
-        }
-    }
-}
-
-async function validateBatchCertificate() {
-    const path = document.getElementById('batch-cert-path').value;
-    const password = document.getElementById('batch-cert-password').value;
-    const infoDiv = document.getElementById('batch-cert-info');
-
-    if (!path) {
-        showToast('Please select a certificate file', 'warning');
-        return;
-    }
-
-    try {
-        const data = await apiCall('/api/certificate/info', 'POST', { path, password });
-        infoDiv.style.display = 'block';
-
-        if (data.error) {
-            infoDiv.className = 'cert-info invalid';
-            infoDiv.innerHTML = `
-                <p><strong>❌ Validation Failed</strong></p>
-                <p>${data.error}</p>
-            `;
-        } else if (data.is_valid) {
-            infoDiv.className = 'cert-info valid';
-            infoDiv.innerHTML = `
-                <p><strong>✅ Certificate Valid</strong></p>
-                <p>Subject: ${data.subject}</p>
-                <p>Valid Until: ${new Date(data.valid_until).toLocaleDateString()}</p>
-                <p>Days Until Expiry: ${data.days_until_expiry}</p>
-            `;
-        } else {
-            infoDiv.className = 'cert-info invalid';
-            infoDiv.innerHTML = `
-                <p><strong>❌ Certificate Expired</strong></p>
-                <p>Subject: ${data.subject}</p>
-                <p>Expired: ${new Date(data.valid_until).toLocaleDateString()}</p>
-            `;
-        }
-    } catch (error) {
-        infoDiv.style.display = 'block';
-        infoDiv.className = 'cert-info invalid';
-        infoDiv.innerHTML = `<p><strong>❌ Connection Failed</strong></p><p>API server not running</p>`;
-    }
-}
-
-async function selectBatchFile() {
-    if (window.electronAPI) {
-        const path = await window.electronAPI.selectFile({
-            filters: [{ name: 'Data Files', extensions: ['xlsx', 'xls', 'csv', 'docx'] }]
-        });
-        if (path) {
-            document.getElementById('batch-file').value = path;
-        }
-    } else {
-        // Fallback: prompt for manual input
-        const path = prompt('Enter data file path (e.g., ./data/input/municipalities.xlsx):');
-        if (path) {
-            document.getElementById('batch-file').value = path;
-        }
-    }
-}
-
-async function previewBatchFile() {
-    const path = document.getElementById('batch-file').value;
-
-    if (!path) {
-        showToast('Please select a data file first', 'warning');
-        return;
-    }
-
-    try {
-        // Check Excel support
-        const supportData = await apiCall('/api/excel/support');
-        if (!supportData.supported) {
-            showToast('Excel support not available. Please install openpyxl.', 'error');
-            return;
-        }
-
-        showToast('Loading file preview...', 'info');
-
-        const data = await apiCall('/api/excel/preview', 'POST', { path });
-
-        if (data.error) {
-            showToast(data.error, 'error');
-            return;
-        }
-
-        // Show preview section
-        const previewDiv = document.getElementById('batch-preview');
-        previewDiv.style.display = 'block';
-
-        // Update info
-        document.getElementById('batch-file-info').textContent =
-            `File: ${path.split('/').pop() || path.split('\\').pop()} | Format: ${data.summary.format || 'Excel'}`;
-
-        // Update stats
-        document.getElementById('batch-total').textContent = data.total_records;
-        document.getElementById('batch-pending').textContent = data.status_counts.pending;
-        document.getElementById('batch-completed').textContent = data.status_counts.completed;
-
-        // Update preview table
-        const tbody = document.getElementById('batch-preview-body');
-        if (data.preview_records.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No records found</td></tr>';
-        } else {
-            tbody.innerHTML = data.preview_records.slice(0, 20).map((record, idx) => `
-                <tr>
-                    <td>${idx + 1}</td>
-                    <td>${record.name}</td>
-                    <td>${record.province || '-'}</td>
-                    <td><span class="status-badge ${record.status}">${record.status}</span></td>
-                </tr>
-            `).join('');
-
-            if (data.total_records > 20) {
-                tbody.innerHTML += `
-                    <tr>
-                        <td colspan="4" class="empty-state">
-                            ... and ${data.total_records - 20} more records
-                        </td>
-                    </tr>
-                `;
-            }
-        }
-
-        showToast(`Loaded ${data.total_records} records`, 'success');
-    } catch (error) {
-        console.error('Preview error:', error);
-        showToast('Failed to preview file', 'error');
-    }
-}
-
-// Setup batch form handler
-document.addEventListener('DOMContentLoaded', () => {
-    const batchForm = document.getElementById('batch-form');
-    if (batchForm) {
-        batchForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            await handleBatchSubmission();
-        });
-    }
-});
-
-async function handleBatchSubmission() {
-    console.log('handleBatchSubmission called');
-
-    const certPathEl = document.getElementById('batch-cert-path');
-    const certPasswordEl = document.getElementById('batch-cert-password');
-    const batchFileEl = document.getElementById('batch-file');
-    const countryEl = document.getElementById('batch-country');
-    const headlessEl = document.getElementById('batch-headless');
-    const skipCompletedEl = document.getElementById('batch-skip-completed');
-
-    // Check elements exist
-    if (!certPathEl || !batchFileEl) {
-        console.error('Form elements not found');
-        showToast('Form elements not found', 'error');
-        return;
-    }
-
-    const certPath = certPathEl.value;
-    const certPassword = certPasswordEl ? certPasswordEl.value : '';
-    const batchFile = batchFileEl.value;
-    const country = countryEl ? countryEl.value : 'portugal';
-    const headless = headlessEl ? headlessEl.checked : true;
-    const skipCompleted = skipCompletedEl ? skipCompletedEl.checked : true;
-
-    console.log('Batch params:', { certPath, batchFile, country, headless, skipCompleted });
-
-    if (!certPath || !batchFile) {
-        showToast('Please select both certificate and data file', 'warning');
-        return;
-    }
-
-    showToast('Starting batch processing...', 'info');
-
-    try {
-        console.log('Calling API:', API_URL + '/api/excel/batch');
-        const data = await apiCall('/api/excel/batch', 'POST', {
-            excel_path: batchFile,
-            certificate_path: certPath,
-            certificate_password: certPassword,
-            country: country,
-            headless: headless,
-            skip_completed: skipCompleted,
-        });
-
-        console.log('API response:', data);
-
-        if (data.error) {
-            showToast(data.error, 'error');
-        } else {
-            showToast('Batch processing started!', 'success');
-            navigateTo('dashboard');
-        }
-    } catch (error) {
-        console.error('Batch submission error:', error);
-        showToast('Failed to start batch processing: ' + error.message, 'error');
-    }
-}
-
-// =============================================================================
-// Diagnostic Functions (for troubleshooting)
-// =============================================================================
-
-async function runDiagnostics() {
-    console.log('=== EU Registry Bot Diagnostics ===');
-    console.log('API_URL:', API_URL);
-    console.log('electronAPI available:', !!window.electronAPI);
-
-    // Test API connection
-    console.log('\n1. Testing API connection...');
-    try {
-        const health = await fetch(`${API_URL}/api/health`);
-        const data = await health.json();
-        console.log('   API Health:', data);
-    } catch (e) {
-        console.error('   API Error:', e.message);
-        console.log('   -> API server may not be running!');
-    }
-
-    // Check form elements
-    console.log('\n2. Checking form elements...');
-    const elements = [
-        'cert-path', 'cert-password', 'cert-info',
-        'batch-cert-path', 'batch-cert-password', 'batch-cert-info',
-        'batch-file', 'batch-country', 'batch-form'
-    ];
-    elements.forEach(id => {
-        const el = document.getElementById(id);
-        console.log(`   ${id}: ${el ? 'OK' : 'NOT FOUND'}`);
-    });
-
-    // Check functions
-    console.log('\n3. Checking functions...');
-    console.log('   validateCertificate:', typeof validateCertificate);
-    console.log('   validateBatchCertificate:', typeof validateBatchCertificate);
-    console.log('   handleBatchSubmission:', typeof handleBatchSubmission);
-
-    console.log('\n=== End Diagnostics ===');
-    showToast('Diagnostics complete - check browser console (F12)', 'info');
-}
-
-// Make diagnostic function available globally
-window.runDiagnostics = runDiagnostics;

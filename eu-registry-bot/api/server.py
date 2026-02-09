@@ -24,11 +24,6 @@ from src.models.result import SubmissionResult, SubmissionStatus
 from src.portals.portugal import PortugalPortal
 from src.portals.france import FrancePortal
 from src.utils.file_handler import FileHandler
-from src.utils import EXCEL_SUPPORT, DATA_READER_SUPPORT
-if EXCEL_SUPPORT:
-    from src.utils import ExcelReader, BatchProcessor, MunicipalityRecord
-if DATA_READER_SUPPORT:
-    from src.utils import DataReader
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -94,25 +89,6 @@ def get_logs():
     return jsonify({"logs": bot_state["logs"][-limit:]})
 
 
-@app.route("/api/reset", methods=["POST"])
-def reset_state():
-    """Reset bot state and circuit breaker."""
-    global bot_state
-
-    # Reset bot state
-    bot_state["status"] = "idle"
-    bot_state["current_task"] = None
-    bot_state["progress"] = 0
-    bot_state["last_result"] = None
-
-    add_log("Bot state and circuit breaker reset", "info")
-
-    return jsonify({
-        "message": "State reset successfully",
-        "status": "idle"
-    })
-
-
 # =============================================================================
 # Certificate Endpoints
 # =============================================================================
@@ -124,42 +100,25 @@ def get_certificate_info():
     cert_path = data.get("path")
     cert_password = data.get("password", "")
 
-    add_log(f"Certificate info request: {cert_path}")
-
-    if not cert_path:
-        return jsonify({"error": "No certificate path provided"}), 400
-
-    if not os.path.exists(cert_path):
-        add_log(f"Certificate file not found: {cert_path}", "error")
-        return jsonify({"error": f"Certificate file not found: {cert_path}"}), 400
+    if not cert_path or not os.path.exists(cert_path):
+        return jsonify({"error": "Certificate file not found"}), 400
 
     try:
         cert_manager = CertificateManager(cert_path, cert_password)
         if not cert_manager.load():
-            add_log("Failed to load certificate - check password", "error")
             return jsonify({"error": "Failed to load certificate. Check password."}), 400
 
         info = cert_manager.get_info()
-        if not info:
-            return jsonify({"error": "Failed to get certificate info"}), 400
-
-        # Handle datetime serialization (may have timezone info)
-        valid_from = str(info.not_valid_before)
-        valid_until = str(info.not_valid_after)
-
-        add_log(f"Certificate loaded: {info.subject[:50]}...", "info")
-
         return jsonify({
             "subject": info.subject,
             "issuer": info.issuer,
             "serial_number": str(info.serial_number),
-            "valid_from": valid_from,
-            "valid_until": valid_until,
+            "valid_from": info.not_valid_before.isoformat(),
+            "valid_until": info.not_valid_after.isoformat(),
             "days_until_expiry": info.days_until_expiry,
             "is_valid": info.is_valid,
         })
     except Exception as e:
-        add_log(f"Certificate error: {str(e)}", "error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -170,29 +129,15 @@ def validate_certificate():
     cert_path = data.get("path")
     cert_password = data.get("password", "")
 
-    add_log(f"Certificate validation request: {cert_path}")
-
     if not cert_path:
         return jsonify({"valid": False, "error": "No certificate path provided"}), 400
 
-    if not os.path.exists(cert_path):
-        add_log(f"Certificate file not found: {cert_path}", "error")
-        return jsonify({"valid": False, "error": f"File not found: {cert_path}"})
-
     try:
         cert_manager = CertificateManager(cert_path, cert_password)
-        if not cert_manager.load():
-            add_log("Certificate load failed - wrong password?", "error")
-            return jsonify({"valid": False, "error": "Failed to load certificate. Check password."})
-
-        if not cert_manager.is_valid():
-            add_log("Certificate is expired or invalid", "error")
-            return jsonify({"valid": False, "error": "Certificate expired or invalid"})
-
-        add_log("Certificate validated successfully", "info")
-        return jsonify({"valid": True})
+        if cert_manager.load() and cert_manager.is_valid():
+            return jsonify({"valid": True})
+        return jsonify({"valid": False, "error": "Certificate invalid or expired"})
     except Exception as e:
-        add_log(f"Certificate validation error: {str(e)}", "error")
         return jsonify({"valid": False, "error": str(e)})
 
 
@@ -505,261 +450,6 @@ def scheduler_status():
         "active": bot_state["scheduler_active"],
         "tasks": tasks,
     })
-
-
-# =============================================================================
-# Excel Batch Processing Endpoints
-# =============================================================================
-
-@app.route("/api/excel/support", methods=["GET"])
-def check_excel_support():
-    """Check if Excel support is available."""
-    return jsonify({"supported": EXCEL_SUPPORT})
-
-
-@app.route("/api/excel/preview", methods=["POST"])
-def preview_excel():
-    """Preview a data file contents (Excel, CSV, DOCX)."""
-    if not DATA_READER_SUPPORT:
-        return jsonify({"error": "Data reader support not available."}), 400
-
-    data = request.json
-    file_path = data.get("path")
-
-    if not file_path or not os.path.exists(file_path):
-        return jsonify({"error": "Data file not found"}), 400
-
-    try:
-        # Custom column mappings if provided
-        custom_mappings = data.get("column_mappings", {})
-
-        # Use DataReader which auto-detects format (.xlsx, .csv, .docx)
-        reader = DataReader(file_path, custom_mappings=custom_mappings)
-        summary = reader.get_summary()
-        records = reader.read_all()
-        reader.close()
-
-        # Convert records to dicts for JSON
-        records_data = [r.to_dict() for r in records[:100]]  # Limit to first 100 for preview
-
-        return jsonify({
-            "summary": summary,
-            "total_records": len(records),
-            "preview_records": records_data,
-            "status_counts": {
-                "pending": sum(1 for r in records if r.status == "pending"),
-                "completed": sum(1 for r in records if r.status == "completed"),
-                "failed": sum(1 for r in records if r.status == "failed"),
-            }
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/excel/batch", methods=["POST"])
-def start_batch_processing():
-    """Start batch processing from Excel file."""
-    add_log("Batch processing request received")
-
-    if not EXCEL_SUPPORT:
-        add_log("Excel support not available", "error")
-        return jsonify({"error": "Excel support not available. Install openpyxl."}), 400
-
-    if not DATA_READER_SUPPORT:
-        add_log("Data reader support not available", "error")
-        return jsonify({"error": "Data reader not available. Install openpyxl, python-docx."}), 400
-
-    if bot_state["status"] == "running":
-        add_log("Process already running", "warning")
-        return jsonify({"error": "A process is already running"}), 400
-
-    data = request.json
-    excel_path = data.get("excel_path")
-    cert_path = data.get("certificate_path")
-    cert_password = data.get("certificate_password", "")
-    country = data.get("country", "portugal")
-    headless = data.get("headless", True)
-    skip_completed = data.get("skip_completed", True)
-
-    add_log(f"Batch params: excel={excel_path}, cert={cert_path}, country={country}")
-
-    if not excel_path:
-        return jsonify({"error": "Missing excel_path parameter"}), 400
-    if not cert_path:
-        return jsonify({"error": "Missing certificate_path parameter"}), 400
-
-    if not os.path.exists(excel_path):
-        add_log(f"Excel file not found: {excel_path}", "error")
-        return jsonify({"error": f"Excel file not found: {excel_path}"}), 400
-
-    if not os.path.exists(cert_path):
-        add_log(f"Certificate file not found: {cert_path}", "error")
-        return jsonify({"error": f"Certificate file not found: {cert_path}"}), 400
-
-    # Run batch processing in background
-    thread = threading.Thread(
-        target=run_batch_processing,
-        args=(excel_path, cert_path, cert_password, country, headless, skip_completed)
-    )
-    thread.start()
-
-    add_log("Batch processing thread started")
-    return jsonify({"message": "Batch processing started", "status": "running"})
-
-
-def run_batch_processing(
-    excel_path: str,
-    cert_path: str,
-    cert_password: str,
-    country: str,
-    headless: bool,
-    skip_completed: bool
-):
-    """Background task for batch processing - OPTIMIZED for speed."""
-    global bot_state
-    from src.core.browser import BrowserManager
-
-    try:
-        bot_state["status"] = "running"
-        bot_state["progress"] = 0
-        add_log(f"Starting batch processing: {excel_path}")
-
-        # Load certificate
-        bot_state["current_task"] = "Loading certificate..."
-        cert_manager = CertificateManager(cert_path, cert_password)
-        if not cert_manager.load() or not cert_manager.is_valid():
-            raise Exception("Certificate invalid or expired")
-
-        add_log("Certificate loaded and verified")
-
-        # Load data file (Excel, CSV, DOCX)
-        bot_state["current_task"] = "Loading data file..."
-        bot_state["progress"] = 5
-
-        reader = DataReader(excel_path)
-        records = reader.read_all()
-        reader.close()
-
-        total = len(records)
-        add_log(f"Loaded {total} records from data file")
-
-        # Load portal config
-        config_path = f"./config/{country}.yaml"
-        import yaml
-        with open(config_path, "r", encoding="utf-8") as f:
-            portal_config = yaml.safe_load(f)
-
-        add_log(f"Portal config loaded: {portal_config.get('portal', {}).get('name', country)}")
-
-        # Process records with SINGLE BROWSER SESSION for speed
-        skip_statuses = ["completed", "success"] if skip_completed else []
-        successful = 0
-        failed = 0
-        skipped = 0
-
-        # Create single browser instance
-        bot_state["current_task"] = "Starting browser..."
-        add_log("Creating browser session (single instance for all records)")
-
-        try:
-            browser = BrowserManager(
-                headless=headless,
-                certificate_path=cert_path,
-            )
-        except Exception as e:
-            add_log(f"Failed to create BrowserManager: {str(e)}", "error")
-            raise Exception(f"Browser initialization failed: {str(e)}")
-
-        try:
-            browser.start()
-            add_log("Browser started successfully")
-        except Exception as e:
-            add_log(f"Failed to start browser: {str(e)}", "error")
-            raise Exception(f"Browser failed to start: {str(e)}. Make sure Chrome is installed.")
-
-        try:
-            # Import certificate to Windows store (once)
-            if hasattr(browser, 'import_certificate_windows'):
-                browser.import_certificate_windows(cert_path, cert_password)
-                add_log("Certificate imported to Windows store")
-
-            # Navigate to portal service page
-            service_url = portal_config.get("portal", {}).get(
-                "service_url",
-                "https://www2.gov.pt/inicio/espaco-empresa/balcao-do-empreendedor"
-            )
-            add_log(f"Navigating to: {service_url}")
-            browser.navigate(service_url)
-
-            import time
-            time.sleep(2)  # Wait for page load
-
-            bot_state["progress"] = 15
-            add_log("Portal loaded, starting batch submissions...")
-
-            # Process each record
-            for idx, record in enumerate(records, start=1):
-                # Check if should skip
-                if record.status.lower() in skip_statuses:
-                    skipped += 1
-                    continue
-
-                bot_state["current_task"] = f"Processing {idx}/{total}: {record.name}"
-                bot_state["progress"] = 15 + int((idx / total) * 80)
-
-                try:
-                    # Log the submission attempt
-                    tax_id = record.code or f"AUTO-{idx:06d}"
-                    location = record.province or record.name
-
-                    # For now, simulate fast processing
-                    # Real implementation would fill forms here
-                    add_log(f"[{idx}/{total}] Submitting: {record.name} ({location})")
-
-                    # Mark as processed (simulated success for testing)
-                    # In real implementation, this would call form filling logic
-                    successful += 1
-                    record.status = "completed"
-
-                    # Brief pause between submissions (reduce from 5s to 0.1s)
-                    time.sleep(0.1)
-
-                except Exception as e:
-                    failed += 1
-                    record.status = "failed"
-                    add_log(f"✗ {record.name}: {str(e)}", "error")
-
-                # Log progress every 100 records
-                if idx % 100 == 0:
-                    add_log(f"Progress: {idx}/{total} processed ({successful} success, {failed} failed)")
-
-        finally:
-            # Always close browser
-            browser.stop()
-            add_log("Browser closed")
-
-        # Final summary
-        bot_state["progress"] = 100
-        bot_state["status"] = "idle"
-        bot_state["current_task"] = None
-        bot_state["last_result"] = {
-            "type": "batch",
-            "total": total,
-            "successful": successful,
-            "failed": failed,
-            "skipped": skipped,
-        }
-
-        add_log(
-            f"Batch complete: {successful} successful, {failed} failed, {skipped} skipped",
-            "success" if failed == 0 else "warning"
-        )
-
-    except Exception as e:
-        bot_state["status"] = "error"
-        bot_state["current_task"] = None
-        bot_state["last_result"] = {"error": str(e)}
-        add_log(f"Batch error: {str(e)}", "error")
 
 
 # =============================================================================
