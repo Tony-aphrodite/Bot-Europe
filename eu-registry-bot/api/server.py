@@ -594,22 +594,22 @@ def run_batch_processing(
             bot_state["progress"] = 10 + int((idx / total) * 80)
 
             try:
-                # Create application from record
-                application = Application(
-                    country=country,
-                    applicant={
+                # Create application from record using from_dict
+                application = Application.from_dict({
+                    "country": country,
+                    "applicant": {
                         "name": record.name,
                         "tax_id": record.code or "",
                         "address": record.extra_data.get("address", ""),
                         "city": record.province or "",
                         "email": record.extra_data.get("email", "info@example.com"),
                     },
-                    installation={
+                    "installation": {
                         "description": f"Installation request for {record.name}",
                         "location": record.province or "",
                         "start_date": datetime.now().strftime("%Y-%m-%d"),
                     },
-                )
+                })
 
                 # Process
                 result = portal.process_application(application)
