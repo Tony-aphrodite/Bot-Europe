@@ -381,6 +381,82 @@ def get_result(filename):
     return jsonify({"error": "Result not found"}), 404
 
 
+@app.route("/api/batch-results", methods=["GET"])
+def list_batch_results():
+    """List all batch processing results."""
+    output_dir = "./data/output"
+    batch_results = []
+
+    try:
+        for filename in os.listdir(output_dir):
+            if filename.startswith("batch_results_") and filename.endswith(".json"):
+                filepath = os.path.join(output_dir, filename)
+                with open(filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    batch_results.append({
+                        "filename": filename,
+                        "filepath": filepath,
+                        "timestamp": data.get("timestamp"),
+                        "country": data.get("country"),
+                        "total_records": data.get("total_records"),
+                        "successful": data.get("successful"),
+                        "failed": data.get("failed"),
+                        "elapsed_seconds": data.get("elapsed_seconds"),
+                        "records_per_second": data.get("records_per_second"),
+                    })
+
+        # Sort by timestamp descending
+        batch_results.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+        return jsonify({"batch_results": batch_results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/batch-results/<path:filename>", methods=["GET"])
+def get_batch_result(filename):
+    """Get detailed batch result with all records."""
+    filepath = os.path.join("./data/output", filename)
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    return jsonify({"error": "Batch result not found"}), 404
+
+
+@app.route("/api/batch-results/<path:filename>/search", methods=["GET"])
+def search_batch_result(filename):
+    """Search records in a batch result."""
+    filepath = os.path.join("./data/output", filename)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "Batch result not found"}), 404
+
+    query = request.args.get("q", "").lower()
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 100, type=int)
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    results = data.get("results", [])
+
+    # Filter by search query
+    if query:
+        results = [r for r in results if query in r.get("name", "").lower()]
+
+    # Paginate
+    total = len(results)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = results[start:end]
+
+    return jsonify({
+        "results": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page,
+    })
+
+
 # =============================================================================
 # Scheduler Endpoints
 # =============================================================================
@@ -790,6 +866,48 @@ def run_batch_processing(
         rate = to_process / elapsed if elapsed > 0 else 0
         add_log(f"Completed in {elapsed:.1f} seconds ({rate:.1f} records/sec)")
         add_log(f"Speed improvement: {NUM_WORKERS}x faster than single thread")
+
+        # Save results to files
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = "./data/output"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save JSON results
+        json_results = {
+            "timestamp": datetime.now().isoformat(),
+            "country": country,
+            "total_records": total,
+            "processed": counters["processed"],
+            "successful": counters["successful"],
+            "failed": counters["failed"],
+            "skipped": skipped,
+            "elapsed_seconds": round(elapsed, 1),
+            "records_per_second": round(rate, 2),
+            "results": [
+                {
+                    "name": name,
+                    "success": success,
+                    "reference_number": ref_num,
+                    "error": error
+                }
+                for name, success, ref_num, error in all_results
+            ]
+        }
+        json_path = os.path.join(output_dir, f"batch_results_{country}_{timestamp}.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(json_results, f, ensure_ascii=False, indent=2)
+        add_log(f"Results saved to: {json_path}")
+
+        # Save CSV for easy viewing
+        csv_path = os.path.join(output_dir, f"batch_results_{country}_{timestamp}.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("Name,Success,Reference Number,Error\n")
+            for name, success, ref_num, error in all_results:
+                # Escape commas and quotes in fields
+                name_escaped = f'"{name}"' if ',' in str(name) else str(name)
+                error_escaped = f'"{error}"' if error and ',' in str(error) else str(error or "")
+                f.write(f"{name_escaped},{success},{ref_num or ''},{error_escaped}\n")
+        add_log(f"CSV saved to: {csv_path}")
 
         # Final summary
         bot_state["progress"] = 100

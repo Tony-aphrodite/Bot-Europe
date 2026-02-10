@@ -752,3 +752,179 @@ async function handleBatchSubmission() {
         showToast('Failed to start batch processing', 'error');
     }
 }
+
+// =============================================================================
+// Batch Results
+// =============================================================================
+
+let currentResultsMode = 'single';
+let currentBatchFile = null;
+let currentBatchPage = 1;
+
+function setResultsMode(mode) {
+    currentResultsMode = mode;
+
+    // Update toggle buttons
+    document.getElementById('results-mode-single').classList.toggle('active', mode === 'single');
+    document.getElementById('results-mode-batch').classList.toggle('active', mode === 'batch');
+
+    // Show/hide containers
+    document.getElementById('single-results-container').style.display = mode === 'single' ? 'block' : 'none';
+    document.getElementById('batch-results-container').style.display = mode === 'batch' ? 'block' : 'none';
+
+    // Load data
+    if (mode === 'batch') {
+        loadBatchResults();
+    }
+}
+
+async function loadBatchResults() {
+    try {
+        const data = await apiCall('/api/batch-results');
+        const tbody = document.querySelector('#batch-results-table tbody');
+
+        if (!data.batch_results || data.batch_results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No batch results found. Run a batch process first.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.batch_results.map(result => {
+            const date = result.timestamp ? new Date(result.timestamp).toLocaleString() : '-';
+            const successRate = result.total_records > 0
+                ? ((result.successful / result.total_records) * 100).toFixed(1)
+                : 0;
+
+            return `
+                <tr>
+                    <td>${date}</td>
+                    <td><span class="country-badge">${getCountryFlag(result.country)} ${result.country}</span></td>
+                    <td>${result.total_records.toLocaleString()}</td>
+                    <td><span class="status-badge success">${result.successful.toLocaleString()} (${successRate}%)</span></td>
+                    <td><span class="status-badge ${result.failed > 0 ? 'error' : ''}">${result.failed.toLocaleString()}</span></td>
+                    <td>${result.records_per_second} rec/s</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="viewBatchDetail('${result.filename}')">View All</button>
+                        <button class="btn btn-secondary" onclick="downloadBatchCSV('${result.filename}')">CSV</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load batch results:', error);
+        showToast('Failed to load batch results', 'error');
+    }
+}
+
+async function viewBatchDetail(filename) {
+    currentBatchFile = filename;
+    currentBatchPage = 1;
+
+    try {
+        showToast('Loading batch details...', 'info');
+
+        const data = await apiCall(`/api/batch-results/${filename}`);
+
+        // Hide list, show detail
+        document.getElementById('batch-results-list').style.display = 'none';
+        document.getElementById('batch-result-detail').style.display = 'block';
+
+        // Update title
+        const date = data.timestamp ? new Date(data.timestamp).toLocaleString() : '';
+        document.getElementById('batch-detail-title').textContent =
+            `${getCountryFlag(data.country)} ${data.country.toUpperCase()} - ${date}`;
+
+        // Update stats
+        document.getElementById('detail-total').textContent = data.total_records.toLocaleString();
+        document.getElementById('detail-success').textContent = data.successful.toLocaleString();
+        document.getElementById('detail-failed').textContent = data.failed.toLocaleString();
+        document.getElementById('detail-speed').textContent = data.records_per_second;
+
+        // Load records
+        displayBatchRecords(data.results);
+
+    } catch (error) {
+        console.error('Failed to load batch detail:', error);
+        showToast('Failed to load batch details', 'error');
+    }
+}
+
+function displayBatchRecords(records, page = 1) {
+    const perPage = 100;
+    const start = (page - 1) * perPage;
+    const end = start + perPage;
+    const paginated = records.slice(start, end);
+    const totalPages = Math.ceil(records.length / perPage);
+
+    const tbody = document.getElementById('batch-detail-body');
+
+    if (paginated.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No records found</td></tr>';
+    } else {
+        tbody.innerHTML = paginated.map((record, idx) => `
+            <tr>
+                <td>${start + idx + 1}</td>
+                <td>${record.name}</td>
+                <td><span class="status-badge ${record.success ? 'success' : 'error'}">${record.success ? '✓ Success' : '✗ Failed'}</span></td>
+                <td>${record.reference_number || record.error || '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Update pagination
+    const pagination = document.getElementById('batch-pagination');
+    if (totalPages > 1) {
+        let paginationHtml = '';
+
+        if (page > 1) {
+            paginationHtml += `<button class="btn btn-secondary" onclick="changeBatchPage(${page - 1})">← Prev</button> `;
+        }
+
+        paginationHtml += `<span style="margin: 0 15px;">Page ${page} of ${totalPages} (${records.length.toLocaleString()} records)</span>`;
+
+        if (page < totalPages) {
+            paginationHtml += ` <button class="btn btn-secondary" onclick="changeBatchPage(${page + 1})">Next →</button>`;
+        }
+
+        pagination.innerHTML = paginationHtml;
+    } else {
+        pagination.innerHTML = `<span>${records.length.toLocaleString()} records</span>`;
+    }
+
+    // Store records for pagination
+    window.currentBatchRecords = records;
+}
+
+function changeBatchPage(page) {
+    currentBatchPage = page;
+    displayBatchRecords(window.currentBatchRecords, page);
+}
+
+async function searchBatchRecords() {
+    const query = document.getElementById('batch-search-input').value.toLowerCase();
+
+    if (!window.currentBatchRecords) return;
+
+    if (!query) {
+        displayBatchRecords(window.currentBatchRecords, 1);
+        return;
+    }
+
+    const filtered = window.currentBatchRecords.filter(r =>
+        r.name && r.name.toLowerCase().includes(query)
+    );
+
+    displayBatchRecords(filtered, 1);
+}
+
+function closeBatchDetail() {
+    document.getElementById('batch-results-list').style.display = 'block';
+    document.getElementById('batch-result-detail').style.display = 'none';
+    currentBatchFile = null;
+    window.currentBatchRecords = null;
+}
+
+function downloadBatchCSV(filename) {
+    // Get CSV filename from JSON filename
+    const csvFilename = filename.replace('.json', '.csv');
+    showToast(`CSV file: data/output/${csvFilename}`, 'info');
+}

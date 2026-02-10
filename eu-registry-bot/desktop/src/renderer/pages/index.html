@@ -357,29 +357,131 @@
                     <p>View submission results</p>
                 </header>
 
-                <div class="toolbar">
-                    <button class="btn btn-secondary" onclick="loadResults()">
-                        <span>🔄</span> Refresh
+                <!-- Results Mode Toggle -->
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="results-mode-single" onclick="setResultsMode('single')">
+                        <span>📝</span> Single Results
+                    </button>
+                    <button class="mode-btn" id="results-mode-batch" onclick="setResultsMode('batch')">
+                        <span>📊</span> Batch Results
                     </button>
                 </div>
 
-                <div class="table-container">
-                    <table class="data-table" id="results-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Country</th>
-                                <th>Status</th>
-                                <th>Reference</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td colspan="5" class="empty-state">Loading results...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <!-- Single Results View -->
+                <div id="single-results-container">
+                    <div class="toolbar">
+                        <button class="btn btn-secondary" onclick="loadResults()">
+                            <span>🔄</span> Refresh
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="data-table" id="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Country</th>
+                                    <th>Status</th>
+                                    <th>Reference</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="5" class="empty-state">Loading results...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Batch Results View -->
+                <div id="batch-results-container" style="display: none;">
+                    <div class="toolbar">
+                        <button class="btn btn-secondary" onclick="loadBatchResults()">
+                            <span>🔄</span> Refresh
+                        </button>
+                    </div>
+
+                    <!-- Batch Results List -->
+                    <div id="batch-results-list">
+                        <div class="table-container">
+                            <table class="data-table" id="batch-results-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Country</th>
+                                        <th>Total</th>
+                                        <th>Success</th>
+                                        <th>Failed</th>
+                                        <th>Speed</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="7" class="empty-state">Loading batch results...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Batch Result Detail View -->
+                    <div id="batch-result-detail" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 id="batch-detail-title">Batch Result Details</h3>
+                                <button class="btn btn-secondary" onclick="closeBatchDetail()">← Back to List</button>
+                            </div>
+                            <div class="card-body">
+                                <!-- Summary Stats -->
+                                <div class="stats-grid" id="batch-detail-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="detail-total">0</span>
+                                        <span class="stat-label">Total</span>
+                                    </div>
+                                    <div class="stat-item success">
+                                        <span class="stat-value" id="detail-success">0</span>
+                                        <span class="stat-label">Success</span>
+                                    </div>
+                                    <div class="stat-item error">
+                                        <span class="stat-value" id="detail-failed">0</span>
+                                        <span class="stat-label">Failed</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="detail-speed">0</span>
+                                        <span class="stat-label">Records/sec</span>
+                                    </div>
+                                </div>
+
+                                <!-- Search -->
+                                <div class="search-bar" style="margin: 20px 0;">
+                                    <input type="text" id="batch-search-input" placeholder="Search by municipality name..." onkeyup="searchBatchRecords()">
+                                </div>
+
+                                <!-- Records Table -->
+                                <div class="table-container" style="max-height: 500px; overflow-y: auto;">
+                                    <table class="data-table" id="batch-detail-table">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Name</th>
+                                                <th>Status</th>
+                                                <th>Reference Number</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="batch-detail-body">
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Pagination -->
+                                <div class="pagination" id="batch-pagination" style="margin-top: 15px; text-align: center;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
