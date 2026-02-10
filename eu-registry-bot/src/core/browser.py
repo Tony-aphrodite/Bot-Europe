@@ -32,6 +32,7 @@ class BrowserManager:
         timeout: int = 30,
         download_dir: Optional[str] = None,
         certificate_path: Optional[str] = None,
+        profile_id: Optional[str] = None,
     ):
         """
         Initialize browser manager.
@@ -41,12 +42,15 @@ class BrowserManager:
             timeout: Default timeout for waits
             download_dir: Directory for downloads
             certificate_path: Path to client certificate (.p12/.pfx)
+            profile_id: Unique ID for browser profile (for parallel instances)
         """
         self.headless = headless
         self.timeout = timeout
         self.download_dir = download_dir or os.path.join(os.getcwd(), "data", "output")
         self.certificate_path = certificate_path
+        self.profile_id = profile_id or "default"
         self.driver: Optional[webdriver.Chrome] = None
+        self._user_data_dir: Optional[str] = None
 
     def _create_options(self) -> ChromeOptions:
         """Create Chrome options with necessary configurations."""
@@ -95,8 +99,10 @@ class BrowserManager:
             prefs["profile.managed_default_content_settings.client_certificates"] = 1
 
             # Use user data dir for persistent certificate access
-            user_data_dir = os.path.join(tempfile.gettempdir(), "chrome_cert_profile")
+            # Each profile_id gets its own directory to prevent conflicts in parallel processing
+            user_data_dir = os.path.join(tempfile.gettempdir(), f"chrome_cert_profile_{self.profile_id}")
             os.makedirs(user_data_dir, exist_ok=True)
+            self._user_data_dir = user_data_dir
             options.add_argument(f"--user-data-dir={user_data_dir}")
 
             # Import certificate hint - log instruction for manual import
