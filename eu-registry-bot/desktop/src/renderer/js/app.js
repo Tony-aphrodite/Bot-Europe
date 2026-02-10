@@ -68,9 +68,6 @@ function navigateTo(pageName) {
         case 'results':
             loadResults();
             break;
-        case 'scheduler':
-            loadSchedulerStatus();
-            break;
     }
 }
 
@@ -443,74 +440,6 @@ async function handleSubmission() {
         }
     } catch (error) {
         showToast('Failed to start submission', 'error');
-    }
-}
-
-// =============================================================================
-// Scheduler
-// =============================================================================
-
-async function loadSchedulerStatus() {
-    try {
-        const data = await apiCall('/api/scheduler/status');
-        const statusDiv = document.getElementById('scheduler-status');
-        const badge = statusDiv.querySelector('.status-badge');
-
-        badge.className = `status-badge ${data.active ? 'active' : 'inactive'}`;
-        badge.textContent = data.active ? 'Active' : 'Inactive';
-    } catch (error) {
-        console.error('Failed to load scheduler status:', error);
-    }
-}
-
-async function selectSchedulerCert() {
-    if (window.electronAPI) {
-        const path = await window.electronAPI.selectFile({
-            filters: [{ name: 'Certificates', extensions: ['p12', 'pfx'] }]
-        });
-        if (path) {
-            document.getElementById('schedule-cert').value = path;
-        }
-    }
-}
-
-async function startScheduler() {
-    const hour = parseInt(document.getElementById('schedule-hour').value);
-    const minute = parseInt(document.getElementById('schedule-minute').value);
-    const certPath = document.getElementById('schedule-cert').value;
-    const certPassword = document.getElementById('schedule-password').value;
-
-    if (!certPath) {
-        showToast('Please select a certificate file', 'warning');
-        return;
-    }
-
-    try {
-        const data = await apiCall('/api/scheduler/start', 'POST', {
-            hour,
-            minute,
-            certificate_path: certPath,
-            certificate_password: certPassword,
-        });
-
-        if (data.error) {
-            showToast(data.error, 'error');
-        } else {
-            showToast(`Scheduler started: ${data.schedule}`, 'success');
-            loadSchedulerStatus();
-        }
-    } catch (error) {
-        showToast('Failed to start scheduler', 'error');
-    }
-}
-
-async function stopScheduler() {
-    try {
-        await apiCall('/api/scheduler/stop', 'POST');
-        showToast('Scheduler stopped', 'success');
-        loadSchedulerStatus();
-    } catch (error) {
-        showToast('Failed to stop scheduler', 'error');
     }
 }
 

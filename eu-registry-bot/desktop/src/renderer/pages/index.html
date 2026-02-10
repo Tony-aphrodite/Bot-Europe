@@ -35,10 +35,6 @@
                     <span class="nav-icon">✅</span>
                     <span class="nav-text">Results</span>
                 </a>
-                <a href="#" class="nav-item" data-page="scheduler">
-                    <span class="nav-icon">⏰</span>
-                    <span class="nav-text">Scheduler</span>
-                </a>
                 <a href="#" class="nav-item" data-page="settings">
                     <span class="nav-icon">⚙️</span>
                     <span class="nav-text">Settings</span>
@@ -485,58 +481,6 @@
                 </div>
             </section>
 
-            <!-- Scheduler Page -->
-            <section class="page" id="page-scheduler">
-                <header class="page-header">
-                    <h1>Scheduler</h1>
-                    <p>Configure automatic submissions</p>
-                </header>
-
-                <div class="scheduler-container">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3>Schedule Configuration</h3>
-                            <div class="scheduler-status" id="scheduler-status">
-                                <span class="status-badge inactive">Inactive</span>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <form id="scheduler-form">
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label for="schedule-hour">Hour (0-23)</label>
-                                        <input type="number" id="schedule-hour" min="0" max="23" value="9">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="schedule-minute">Minute (0-59)</label>
-                                        <input type="number" id="schedule-minute" min="0" max="59" value="0">
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="schedule-cert">Certificate File</label>
-                                    <div class="file-input-group">
-                                        <input type="text" id="schedule-cert" readonly placeholder="Select certificate...">
-                                        <button type="button" class="btn btn-secondary" onclick="selectSchedulerCert()">Browse</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="schedule-password">Certificate Password</label>
-                                    <input type="password" id="schedule-password" placeholder="Enter password">
-                                </div>
-                                <div class="form-actions">
-                                    <button type="button" class="btn btn-primary" onclick="startScheduler()">
-                                        <span>▶️</span> Start Scheduler
-                                    </button>
-                                    <button type="button" class="btn btn-danger" onclick="stopScheduler()">
-                                        <span>⏹️</span> Stop Scheduler
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
             <!-- Settings Page -->
             <section class="page" id="page-settings">
                 <header class="page-header">
@@ -612,10 +556,6 @@
         </div>
     </div>
 
-    <script>
-        alert('INLINE SCRIPT WORKS!');
-        console.log('Inline script executed');
-    </script>
     <script src="../js/app.js"></script>
 </body>
 </html>

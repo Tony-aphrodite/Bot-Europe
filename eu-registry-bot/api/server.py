@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.certificate import CertificateManager
 from src.core.logger import setup_logger
-from src.core.scheduler import TaskScheduler
 from src.models.application import Application
 from src.models.result import SubmissionResult, SubmissionStatus
 from src.portals.portugal import PortugalPortal
@@ -42,11 +41,7 @@ bot_state = {
     "progress": 0,
     "last_result": None,
     "logs": [],
-    "scheduler_active": False,
 }
-
-# Scheduler instance
-scheduler = None
 
 
 def add_log(message: str, level: str = "info"):
@@ -80,7 +75,6 @@ def get_status():
         "status": bot_state["status"],
         "current_task": bot_state["current_task"],
         "progress": bot_state["progress"],
-        "scheduler_active": bot_state["scheduler_active"],
         "last_result": bot_state["last_result"],
     })
 
@@ -454,80 +448,6 @@ def search_batch_result(filename):
         "page": page,
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page,
-    })
-
-
-# =============================================================================
-# Scheduler Endpoints
-# =============================================================================
-
-@app.route("/api/scheduler/start", methods=["POST"])
-def start_scheduler():
-    """Start the scheduler."""
-    global scheduler
-
-    data = request.json
-    hour = data.get("hour", 9)
-    minute = data.get("minute", 0)
-    input_dir = data.get("input_dir", "./data/input")
-    cert_path = data.get("certificate_path")
-    cert_password = data.get("certificate_password", "")
-
-    if not cert_path:
-        return jsonify({"error": "Certificate path required"}), 400
-
-    try:
-        if scheduler:
-            scheduler.stop()
-
-        scheduler = TaskScheduler()
-
-        def scheduled_task():
-            applications = FileHandler.list_pending_applications(input_dir)
-            for app_file in applications:
-                run_submission(app_file, cert_path, cert_password)
-
-        scheduler.add_daily_task(
-            task_id="daily_submission",
-            func=scheduled_task,
-            hour=hour,
-            minute=minute,
-        )
-
-        scheduler.start()
-        bot_state["scheduler_active"] = True
-
-        add_log(f"Scheduler started: daily at {hour:02d}:{minute:02d}")
-        return jsonify({"message": "Scheduler started", "schedule": f"{hour:02d}:{minute:02d}"})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/scheduler/stop", methods=["POST"])
-def stop_scheduler():
-    """Stop the scheduler."""
-    global scheduler
-
-    if scheduler:
-        scheduler.stop()
-        scheduler = None
-
-    bot_state["scheduler_active"] = False
-    add_log("Scheduler stopped")
-    return jsonify({"message": "Scheduler stopped"})
-
-
-@app.route("/api/scheduler/status", methods=["GET"])
-def scheduler_status():
-    """Get scheduler status."""
-    tasks = []
-    if scheduler:
-        tasks = scheduler.list_tasks()
-
-    return jsonify({
-        "active": bot_state["scheduler_active"],
-        "tasks": tasks,
     })
 
 
@@ -911,8 +831,8 @@ def run_batch_processing(
 
         # Final summary
         bot_state["progress"] = 100
-        bot_state["status"] = "idle"
-        bot_state["current_task"] = None
+        bot_state["status"] = "success"
+        bot_state["current_task"] = "Completed successfully!"
         bot_state["last_result"] = {
             "type": "batch",
             "mode": "parallel",
